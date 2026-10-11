@@ -50,7 +50,9 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 - [ ] **Ladder v2** — BST, AVL, splay, red-black, 2-3, B-tree, B+ (completes doc 05 §1's candidate set + the syllabus trees)
 - [ ] Sorted-insertion adversarial pattern (BST degeneration demo)
 - [x] Arbitrage (Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF) — see below
-- [ ] Then: queue / cache / ticker / compression benches
+- [x] Queue (array, singly list, DLL, tree-by-id, DLL+hash) — see Run 6
+- [ ] Then: cache / ticker / compression benches
+- [ ] Deeper-book adversarial queue run (array O(n)-shift divergence at realistic depth)
 
 ---
 
@@ -180,4 +182,28 @@ publication-grade statistics; a dedicated higher-rep run with more seeds would b
 make a strict determinism claim from the spread% column rather than the qualitative one
 above. Full raw rows: `results/raw_results.csv` (including the two failed debugging rows from
 the bugs documented in Run 4, kept as an honest record rather than scrubbed).
+
+## Run 6 — Order queue: FIFO execution + arbitrary cancel-by-id
+
+**Command:** `./run.sh queue --n 300000 --seed 42 --reps 7 --warmup 3`
+**Workload:** 300,000 ops (enqueue 150,049 / dequeue-head 134,841 / cancel-by-id 12,083 / peek 3,027; 3,125 live orders at the end). The mix and its justification live in `QueueWorkload`'s class javadoc (~8% of arrivals cancelled pre-execution — inside the commonly cited 5–20% exchange band; ~90% execute FIFO; ~2% accumulate as depth). All candidates validated against the `LinkedHashMap` oracle (checksum `0xe9ed43f6fd1fef66` + exact final-state equality) before any timing.
+
+| structure | median ms | ops/sec | alloc B/op | spread % |
+|:---|--:|--:|--:|--:|
+| oracle-linkedMap (JDK baseline) | 3.06 | 98.0M | 45.2 | 36.2 |
+| array (shift-on-cancel) | 5.76 | 52.1M | 0.4 | 6.6 |
+| singly-list | 18.63 | 16.1M | 16.0 | 1.2 |
+| dll-no-index | 18.58 | 16.1M | 20.0 | 2.0 |
+| tree-by-id (treap) | 436.96 | 0.7M | 28.0 | 14.7 |
+| **dll+hash (the pick)** | **4.18** | **71.8M** | 20.2 | 4.6 |
+
+**Findings vs doc 05 §2 claims:**
+
+1. **The pick wins, and the hash index's role is visible in the numbers.** dll+hash is the fastest candidate (4.18 ms) — **4.4×** faster than the plain DLL (18.58 ms), whose only deficit is the O(n) cancel-locate scan the hash map removes, and **105×** faster than the tree-by-id treap (436.96 ms).
+2. **One honest refinement of the rubric:** the design bullet said a balanced tree keyed by orderId "gives O(log N) everywhere." Measured, that's optimistic — FIFO head operations cost a full **O(n) traversal** (id order ≠ arrival order; 134,841 dequeues × ~3k live nodes), making the tree the worst candidate by two orders of magnitude. The rejection stands, for a stronger reason than the rubric gave.
+3. **The honest surprise: the plain array is closer than the rubric implied** — 5.76 ms vs 4.18 ms (1.4×, not orders of magnitude). At this workload's shallow resting depth (~3k live) and ~4% cancel share, its O(n) find+shift costs are small in absolute terms and `System.arraycopy` is cache-friendly; the divergence grows with depth and cancel rate. A deeper-book adversarial run is queued in Next rather than tuned into this one. (The array also allocates just 0.4 B/op — its compaction keeps the backing store tiny.)
+4. **vs the JDK baseline:** the hand-rolled pick lands within 1.4× of `LinkedHashMap` (3.06 ms) while allocating **2.2× less per op** (20.2 vs 45.2 B/op — the oracle pays boxing on every entry).
+5. **First-run clean sweep:** every candidate passed the oracle immediately — no bugs found in this module (contrast Run 4, where the harness caught two).
+
+**Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; the oracle row's 36% spread is typical JIT/GC noise on the shortest-running candidate (medians absorb it). The oracle here is same-family (`LinkedHashMap`) but JDK-hardened — the independence bar this module's brief set. Raw rows appended to `results/raw_results.csv`.
 

@@ -22,3 +22,12 @@ src/ads/bench/ladder/FlatArrayLadder.java
 src/ads/bench/ladder/LadderOps.java
 src/ads/bench/ladder/LadderBench.java
 src/ads/bench/Main.java
+src/ads/bench/queue/TreeQueueOps.java
+src/ads/bench/queue/QueueBench.java
+src/ads/bench/queue/ArrayQueueOps.java
+src/ads/bench/queue/LinkedHashMapOracle.java
+src/ads/bench/queue/DllQueueOps.java
+src/ads/bench/queue/SinglyListQueueOps.java
+src/ads/bench/queue/QueueOps.java
+src/ads/bench/queue/QueueWorkload.java
+src/ads/bench/queue/DllHashQueueOps.java

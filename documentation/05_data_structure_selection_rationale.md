@@ -88,6 +88,21 @@ The rubric table above was the design-stage prediction. We then actually built a
 
 **Winner: Doubly Linked List + Hash Map (unchanged).** This is the one subsystem where no alternative even comes close — the combination is the textbook-optimal answer (it's literally how LRU caches and real matching engines solve this), so we did not change it.
 
+### Benchmark Evidence (measured — see `benchmark/results/RESULTS.md` Run 6)
+
+All five candidates were implemented from scratch behind a frozen `QueueOps` contract and replayed the same seeded 300,000-op workload (enqueue / dequeue-head / cancel-by-id / peek — mix and justification in `QueueWorkload`; methodology in `benchmark/README.md`), oracle-gated against a `LinkedHashMap` reference before any timing.
+
+| structure | median ms | M ops/sec | alloc B/op | spread % |
+| :--- | --: | --: | --: | --: |
+| oracle (LinkedHashMap baseline) | 3.06 | 98.0 | 45.2 | 36.2 |
+| array (shift-on-cancel) | 5.76 | 52.1 | 0.4 | 6.6 |
+| singly list | 18.63 | 16.1 | 16.0 | 1.2 |
+| DLL (no index) | 18.58 | 16.1 | 20.0 | 2.0 |
+| balanced tree by orderId (treap) | 436.96 | 0.7 | 28.0 | 14.7 |
+| **DLL + Hash Map** | **4.18** | **71.8** | 20.2 | 4.6 |
+
+**Findings:** the verdict survives measurement, and the hash index's role is now visible in numbers — the pick is 4.4× faster than the plain DLL (the O(n) cancel scan is the entire gap) and 105× faster than the tree. One honest refinement: the design-stage bullet "a balanced tree keyed by orderId gives O(log N) everywhere" was optimistic — measured, FIFO head operations cost a full O(n) traversal (id order ≠ arrival order), making the tree the worst candidate by two orders of magnitude; the rejection stands for an even stronger reason. Also stated plainly: the value of the hash index shrinks as the resting book gets shallow — at this workload's ~3k live orders the plain array is only 1.4× behind the pick, so its O(n) shift cost becomes decisive only as depth and cancel-rate grow (a deeper-book adversarial run is queued in `RESULTS.md`'s Next list, not tuned into this one).
+
 ---
 
 ## 3. Currency Loophole Detection (Negative Cycle in a Weighted Directed Graph)
@@ -202,7 +217,7 @@ All five candidates were implemented from scratch behind a frozen `GraphOps` con
 | Subsystem | Chosen | Strongest Rejected Alternative | Deciding Factor | Evidence |
 | :--- | :--- | :--- | :--- | :-: |
 | Price Ladder | **Radix Tree** (16-ary, revised) | Direct-Indexed Array (4.10, numerically highest) | Overridden on robustness grounds, not a numeric win — see §1 verdict. Memory scales with active price levels, not tick-range magnitude | **Measured** |
-| Order Queue + Cancel | **DLL + Hash Map** | Plain DLL (4.20) | Needed O(1) *lookup* before O(1) unlink — the Hash Map supplies exactly that | Rubric only |
+| Order Queue + Cancel | **DLL + Hash Map** | Plain DLL (4.20) | Needed O(1) *lookup* before O(1) unlink — the Hash Map supplies exactly that | **Measured** |
 | Arbitrage Detection | **Bellman-Ford** | SPFA (4.35) | Fixed, input-order-independent iteration count and simpler implementation beat SPFA's average-case speed, which is immaterial at this graph size (10–50 vertices) | **Measured** |
 | Account Cache | **Hash Map + LRU** | Plain Hash Map (3.90) | Point-lookup workload doesn't need a tree's ordering; LRU closes the one real gap (unbounded memory) a plain hash map has | Rubric only |
 | Ticker Lookup | **Trie** | 3-way tie: Hash Set / Sorted Array / Ternary Search Tree (3.65 each) | Only the Trie and TST can perform prefix queries at all; Trie wins on alphabet size (see rubric-limitation note in §5) | Rubric only |
@@ -210,4 +225,4 @@ All five candidates were implemented from scratch behind a frozen `GraphOps` con
 
 **Overall conclusion:** this document was corrected after an external review found that most of its original weighted-sum arithmetic did not match its own stated formula, and that the original Price Ladder scoring overstated the Radix Tree's memory efficiency and industry precedent. With the numbers fixed, four of six subsystems are decisive wins (Order Queue, Arbitrage Detection, Account Cache, Log Compression), one has a genuine three-way statistical tie resolved by a hard capability requirement (Ticker Lookup), and one — Price Ladder — was a close engineering judgment call *when this document was rubric-only*.
 
-**Two of the six verdicts are no longer rubric-only.** Price Ladder and Arbitrage Detection have since been implemented from scratch and benchmarked (`benchmark/results/RESULTS.md`), against real data where it exists (a live Frankfurter currency snapshot for arbitrage) and a correctness oracle independent of every candidate. Both benchmarks *confirmed* their section's verdict rather than overturning it, and in the Price Ladder's case sharpened it — Radix Tree turned out to measurably beat the Red-Black Tree proxy outright (faster *and* 6.7× less memory), not just hold a defensible tie. Building the arbitrage benchmark also surfaced two real implementation bugs along the way, documented rather than hidden. The remaining four subsystems (Order Queue, Account Cache, Ticker Lookup, Log Compression) are still rubric-only predictions pending the same treatment — the benchmark roadmap in `benchmark/README.md` has them queued next.
+**Three of the six verdicts are no longer rubric-only.** Price Ladder, Arbitrage Detection, and Order Queue have since been implemented from scratch and benchmarked (`benchmark/results/RESULTS.md`), against real data where it exists (a live Frankfurter currency snapshot for arbitrage) and a correctness oracle independent of every candidate. All three benchmarks *confirmed* their section's verdict rather than overturning it, and in the Price Ladder's case sharpened it — Radix Tree turned out to measurably beat the Red-Black Tree proxy outright (faster *and* 6.7× less memory), not just hold a defensible tie. Building the arbitrage benchmark also surfaced two real implementation bugs along the way, documented rather than hidden. The remaining three subsystems (Account Cache, Ticker Lookup, Log Compression) are still rubric-only predictions pending the same treatment — the benchmark roadmap in `benchmark/README.md` has them queued next.

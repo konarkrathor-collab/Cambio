@@ -19,6 +19,14 @@ import ads.bench.ladder.SkipListLadder;
 import ads.bench.ladder.SortedArrayLadder;
 import ads.bench.ladder.TreeMapLadder;
 import ads.bench.ladder.UnsortedArrayLadder;
+import ads.bench.queue.ArrayQueueOps;
+import ads.bench.queue.DllHashQueueOps;
+import ads.bench.queue.DllQueueOps;
+import ads.bench.queue.LinkedHashMapOracle;
+import ads.bench.queue.QueueBench;
+import ads.bench.queue.QueueWorkload;
+import ads.bench.queue.SinglyListQueueOps;
+import ads.bench.queue.TreeQueueOps;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -38,6 +46,8 @@ public final class Main {
         + " [--base B] [--range R] [--band H] [--pattern walk] [--out FILE]");
     System.out.println("   or: run.sh arbitrage [--graph real|synthetic] [--v V]"
         + " [--inject true|false] [--seed S] [--reps R] [--warmup W] [--out FILE]");
+    System.out.println("   or: run.sh queue [--n N] [--seed S] [--reps R] [--warmup W]"
+        + " [--out FILE]");
   }
 
   public static void main(String[] args) throws IOException {
@@ -47,6 +57,10 @@ public final class Main {
     }
     if (args[0].equals("arbitrage")) {
       runArbitrage(args);
+      return;
+    }
+    if (args[0].equals("queue")) {
+      runQueue(args);
       return;
     }
     if (!args[0].equals("ladder")) {
@@ -262,6 +276,90 @@ public final class Main {
     System.out.println(anyFailed
         ? "RESULT: FAILURES PRESENT (a structure disagreed with the reference verdict)"
         : "RESULT: all candidates validated against the reference and timed OK");
+    if (anyFailed) {
+      System.exit(1);
+    }
+  }
+
+  /** Queue bench: ./run.sh queue [--n N] [--seed S] [--reps R] [--warmup W] [--out FILE] */
+  private static void runQueue(String[] args) throws IOException {
+    int n = 300_000;
+    long seed = 42;
+    int reps = 7;
+    int warmup = 3;
+    String outPath = "results/raw_results.csv";
+    for (int i = 1; i + 1 < args.length; i += 2) {
+      String k = args[i];
+      String v = args[i + 1];
+      switch (k) {
+        case "--n": n = Integer.parseInt(v); break;
+        case "--seed": seed = Long.parseLong(v); break;
+        case "--reps": reps = Integer.parseInt(v); break;
+        case "--warmup": warmup = Integer.parseInt(v); break;
+        case "--out": outPath = v; break;
+        default:
+          usage();
+          System.exit(2);
+      }
+    }
+
+    final long fSeed = seed;
+    QueueWorkload w = QueueWorkload.generate(n, fSeed);
+    System.out.println("workload: " + w.describe());
+
+    // Oracle: the correctness gate
+    LinkedHashMapOracle oracle = new LinkedHashMapOracle();
+    long oracleChecksum = QueueBench.replay(oracle, w);
+    TreeMap<Long, Long> oracleState = QueueBench.snapshot(oracle, w.n);
+    System.out.println("oracle: checksum=0x" + Long.toHexString(oracleChecksum)
+        + " liveOrders=" + oracleState.size());
+
+    Map<String, QueueBench.Factory> candidates = new LinkedHashMap<>();
+    candidates.put("oracle-linkedMap", LinkedHashMapOracle::new);
+    candidates.put("array", ArrayQueueOps::new);
+    candidates.put("singly-list", SinglyListQueueOps::new);
+    candidates.put("dll-no-index", DllQueueOps::new);
+    candidates.put("tree-by-id", () -> new TreeQueueOps(fSeed ^ 0x2545F4914F6CDD1DL));
+    candidates.put("dll+hash", DllHashQueueOps::new);
+
+    AllocCounter alloc = new AllocCounter();
+    System.out.println("alloc counter: " + (alloc.isEnabled() ? "enabled" : "UNAVAILABLE"));
+    System.out.println();
+    System.out.println(BenchResult.header());
+
+    boolean anyFailed = false;
+    Path out = Paths.get(outPath);
+    if (out.getParent() != null) {
+      Files.createDirectories(out.getParent());
+    }
+    boolean needHeader = !Files.exists(out) || Files.size(out) == 0;
+
+    try (BufferedWriter csv = Files.newBufferedWriter(out, StandardCharsets.UTF_8,
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+      if (needHeader) {
+        csv.write(BenchResult.csvHeader());
+        csv.newLine();
+      }
+      for (Map.Entry<String, QueueBench.Factory> e : candidates.entrySet()) {
+        String name = e.getKey();
+        String problem = QueueBench.verify(e.getValue().create(), w, oracleChecksum, oracleState);
+        BenchResult r;
+        if (problem != null) {
+          anyFailed = true;
+          r = QueueBench.failed("queue", name, w, reps, problem);
+        } else {
+          r = QueueBench.timed("queue", name, e.getValue(), w, warmup, reps, alloc, "");
+        }
+        System.out.println(r.row());
+        csv.write(r.csv());
+        csv.newLine();
+      }
+    }
+
+    System.out.println();
+    System.out.println(anyFailed
+        ? "RESULT: FAILURES PRESENT (a structure disagreed with the oracle)"
+        : "RESULT: all candidates validated against the oracle and timed OK");
     if (anyFailed) {
       System.exit(1);
     }
