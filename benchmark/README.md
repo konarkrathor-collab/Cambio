@@ -43,7 +43,7 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 - [ ] **Ladder v2** — BST, AVL, splay, red-black, 2-3, B-tree, B+ (syllabus trees)
 - [ ] **Queue** — array, singly LL, DLL, DLL+hash, tree-by-ID (order queue + O(1) cancel)
 - [ ] **Cache** — hash chaining, open addressing, hash+LRU, splay (Zipf workloads)
-- [ ] **Arbitrage** — Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan (negative cycles)
+- [x] **Arbitrage** — Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF (negative cycles; real Frankfurter data + synthetic, oracle-gated at small V)
 - [ ] **Ticker** — hash set, sorted array, TST, trie (+ autocomplete)
 - [ ] **Compression** — Huffman, RLE, LZW (ratio + roundtrip + speed)
 
@@ -52,7 +52,14 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 ```bash
 ./build.sh
 ./run.sh ladder --n 300000 --seed 42 --reps 7 --warmup 3
-# flags: --n --seed --reps --warmup --base --range --band --pattern --out
+# ladder flags: --n --seed --reps --warmup --base --range --band --pattern --out
+
+./run.sh arbitrage --graph real --seed 42 --reps 7 --warmup 3
+./run.sh arbitrage --graph synthetic --v 8 --inject true --seed 42 --reps 7 --warmup 3
+# arbitrage flags: --graph real|synthetic --v --inject true|false --seed --reps --warmup --out
+# "real" uses the captured Frankfurter snapshot in data/; correctness is oracle-gated
+# (independent brute-force) for V<=10, and cross-checked against Bellman-Ford's own verdict
+# above that — always stated explicitly in the console output, never silently assumed.
 ```
 
 Output: console table + appended rows in `results/raw_results.csv`.

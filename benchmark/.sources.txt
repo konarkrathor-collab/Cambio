@@ -2,6 +2,16 @@ src/ads/bench/core/Stats.java
 src/ads/bench/core/AllocCounter.java
 src/ads/bench/core/BenchResult.java
 src/ads/bench/core/Rng.java
+src/ads/bench/arbitrage/GraphOps.java
+src/ads/bench/arbitrage/BruteForceOracle.java
+src/ads/bench/arbitrage/CycleTrace.java
+src/ads/bench/arbitrage/JohnsonArbitrage.java
+src/ads/bench/arbitrage/BellmanFordArbitrage.java
+src/ads/bench/arbitrage/SpfaArbitrage.java
+src/ads/bench/arbitrage/FloydWarshallArbitrage.java
+src/ads/bench/arbitrage/ArbitrageWorkload.java
+src/ads/bench/arbitrage/ArbitrageBench.java
+src/ads/bench/arbitrage/TarjanArbitrage.java
 src/ads/bench/ladder/UnsortedArrayLadder.java
 src/ads/bench/ladder/LadderWorkload.java
 src/ads/bench/ladder/TreeMapLadder.java
