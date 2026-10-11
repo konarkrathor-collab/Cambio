@@ -2,6 +2,15 @@ src/ads/bench/core/Stats.java
 src/ads/bench/core/AllocCounter.java
 src/ads/bench/core/BenchResult.java
 src/ads/bench/core/Rng.java
+src/ads/bench/cache/SplayCache.java
+src/ads/bench/cache/LruHashCache.java
+src/ads/bench/cache/OpenHashCache.java
+src/ads/bench/cache/AccountStore.java
+src/ads/bench/cache/CacheWorkload.java
+src/ads/bench/cache/CacheOps.java
+src/ads/bench/cache/LruReferenceOracle.java
+src/ads/bench/cache/CacheBench.java
+src/ads/bench/cache/ChainHashCache.java
 src/ads/bench/arbitrage/GraphOps.java
 src/ads/bench/arbitrage/BruteForceOracle.java
 src/ads/bench/arbitrage/CycleTrace.java

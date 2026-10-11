@@ -9,6 +9,14 @@ import ads.bench.arbitrage.GraphOps;
 import ads.bench.arbitrage.JohnsonArbitrage;
 import ads.bench.arbitrage.SpfaArbitrage;
 import ads.bench.arbitrage.TarjanArbitrage;
+import ads.bench.cache.CacheBench;
+import ads.bench.cache.CacheOps;
+import ads.bench.cache.CacheWorkload;
+import ads.bench.cache.ChainHashCache;
+import ads.bench.cache.LruHashCache;
+import ads.bench.cache.LruReferenceOracle;
+import ads.bench.cache.OpenHashCache;
+import ads.bench.cache.SplayCache;
 import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
 import ads.bench.ladder.FlatArrayLadder;
@@ -48,6 +56,8 @@ public final class Main {
         + " [--inject true|false] [--seed S] [--reps R] [--warmup W] [--out FILE]");
     System.out.println("   or: run.sh queue [--n N] [--seed S] [--reps R] [--warmup W]"
         + " [--out FILE]");
+    System.out.println("   or: run.sh cache [--n N] [--seed S] [--reps R] [--warmup W]"
+        + " [--universe U] [--capacity C] [--zipf S] [--out FILE]");
   }
 
   public static void main(String[] args) throws IOException {
@@ -61,6 +71,10 @@ public final class Main {
     }
     if (args[0].equals("queue")) {
       runQueue(args);
+      return;
+    }
+    if (args[0].equals("cache")) {
+      runCache(args);
       return;
     }
     if (!args[0].equals("ladder")) {
@@ -349,6 +363,104 @@ public final class Main {
           r = QueueBench.failed("queue", name, w, reps, problem);
         } else {
           r = QueueBench.timed("queue", name, e.getValue(), w, warmup, reps, alloc, "");
+        }
+        System.out.println(r.row());
+        csv.write(r.csv());
+        csv.newLine();
+      }
+    }
+
+    System.out.println();
+    System.out.println(anyFailed
+        ? "RESULT: FAILURES PRESENT (a structure disagreed with the oracle)"
+        : "RESULT: all candidates validated against the oracle and timed OK");
+    if (anyFailed) {
+      System.exit(1);
+    }
+  }
+
+  /** Cache bench: ./run.sh cache [--n N] [--seed S] [--reps R] [--warmup W]
+   *  [--universe U] [--capacity C] [--zipf S] [--out FILE] */
+  private static void runCache(String[] args) throws IOException {
+    int n = 300_000;
+    long seed = 42;
+    int reps = 7;
+    int warmup = 3;
+    int universe = 100_000;
+    int capacity = 10_000;
+    double zipfS = 1.0;
+    String outPath = "results/raw_results.csv";
+    for (int i = 1; i + 1 < args.length; i += 2) {
+      String k = args[i];
+      String v = args[i + 1];
+      switch (k) {
+        case "--n": n = Integer.parseInt(v); break;
+        case "--seed": seed = Long.parseLong(v); break;
+        case "--reps": reps = Integer.parseInt(v); break;
+        case "--warmup": warmup = Integer.parseInt(v); break;
+        case "--universe": universe = Integer.parseInt(v); break;
+        case "--capacity": capacity = Integer.parseInt(v); break;
+        case "--zipf": zipfS = Double.parseDouble(v); break;
+        case "--out": outPath = v; break;
+        default:
+          usage();
+          System.exit(2);
+      }
+    }
+
+    final int fCapacity = capacity;
+    CacheWorkload w = CacheWorkload.generate(n, seed, universe, zipfS, capacity);
+    System.out.println("workload: " + w.describe());
+
+    // Oracle: the correctness gate (bounded LRU reference)
+    LruReferenceOracle oracle = new LruReferenceOracle(capacity);
+    long oracleChecksum = CacheBench.replay(oracle, w);
+    System.out.println("oracle: checksum=0x" + Long.toHexString(oracleChecksum)
+        + " resident=" + oracle.size());
+
+    Map<String, CacheBench.Factory> candidates = new LinkedHashMap<>();
+    candidates.put("oracle-linkedMapLRU", () -> new LruReferenceOracle(fCapacity));
+    candidates.put("hash-chaining", ChainHashCache::new);
+    candidates.put("hash-open", OpenHashCache::new);
+    candidates.put("hash+LRU", () -> new LruHashCache(fCapacity));
+    candidates.put("splay", SplayCache::new);
+
+    AllocCounter alloc = new AllocCounter();
+    System.out.println("alloc counter: " + (alloc.isEnabled() ? "enabled" : "UNAVAILABLE"));
+    System.out.println();
+    System.out.println(BenchResult.header());
+
+    boolean anyFailed = false;
+    Path out = Paths.get(outPath);
+    if (out.getParent() != null) {
+      Files.createDirectories(out.getParent());
+    }
+    boolean needHeader = !Files.exists(out) || Files.size(out) == 0;
+
+    try (BufferedWriter csv = Files.newBufferedWriter(out, StandardCharsets.UTF_8,
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+      if (needHeader) {
+        csv.write(BenchResult.csvHeader());
+        csv.newLine();
+      }
+      for (Map.Entry<String, CacheBench.Factory> e : candidates.entrySet()) {
+        String name = e.getKey();
+        CacheOps probe = e.getValue().create();
+        String problem = CacheBench.verifyBalance(probe, w, oracleChecksum);
+        if (problem == null) {
+          if (name.equals("hash+LRU")) {
+            problem = CacheBench.verifyLruResidency(new LruHashCache(fCapacity), w);
+          } else if (!name.equals("oracle-linkedMapLRU")) {
+            problem = CacheBench.verifyUnboundedResidency(probe, w);
+          }
+        }
+        BenchResult r;
+        if (problem != null) {
+          anyFailed = true;
+          r = CacheBench.failed("cache", name, w, reps, problem);
+        } else {
+          String note = "finalSize=" + probe.size() + " capacity=" + capacity;
+          r = CacheBench.timed("cache", name, e.getValue(), w, warmup, reps, alloc, note);
         }
         System.out.println(r.row());
         csv.write(r.csv());

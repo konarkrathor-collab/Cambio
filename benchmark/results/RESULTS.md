@@ -51,7 +51,8 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 - [ ] Sorted-insertion adversarial pattern (BST degeneration demo)
 - [x] Arbitrage (Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF) — see below
 - [x] Queue (array, singly list, DLL, tree-by-id, DLL+hash) — see Run 6
-- [ ] Then: cache / ticker / compression benches
+- [x] Cache (hash chaining, open addressing, hash+LRU, splay; Zipfian stream) — see Run 7
+- [ ] Then: ticker / compression benches
 - [ ] Deeper-book adversarial queue run (array O(n)-shift divergence at realistic depth)
 
 ---
@@ -206,4 +207,27 @@ the bugs documented in Run 4, kept as an honest record rather than scrubbed).
 5. **First-run clean sweep:** every candidate passed the oracle immediately — no bugs found in this module (contrast Run 4, where the harness caught two).
 
 **Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; the oracle row's 36% spread is typical JIT/GC noise on the shortest-running candidate (medians absorb it). The oracle here is same-family (`LinkedHashMap`) but JDK-hardened — the independence bar this module's brief set. Raw rows appended to `results/raw_results.csv`.
+
+## Run 7 — Account cache: Zipfian margin lookups (LRU vs plain hashes vs splay)
+
+**Command:** `./run.sh cache --n 300000 --seed 42 --reps 7 --warmup 3`
+**Workload:** 300,000 accesses over a 100,000-trader universe, Zipf s = 1.0, cache capacity 10,000. Measured skew: the top 10% of accounts receive **81.1%** of all accesses; 47,907 distinct accounts appear in the stream. (A uniform stream would be a methodology error here — see `CacheWorkload`'s javadoc.) Validation: every candidate matched the oracle's balance checksum (`0x624e175ea1e67cf3`); the LRU pick additionally passed **full-residency lockstep equality** against the access-order reference at n/4, n/2, 3n/4 and the end; the no-eviction candidates passed exact touched-set residency checks.
+
+| structure | median ms | ops/sec | alloc B/op | spread % | resident at end |
+|:---|--:|--:|--:|--:|--:|
+| oracle-linkedMapLRU (JDK baseline) | 7.43 | 40.4M | 37.4 | 19.8 | 10,000 (capacity) |
+| hash-chaining (no eviction) | 3.30 | 90.8M | 6.9 | 10.5 | 47,907 |
+| hash-open (no eviction) | 2.84 | 105.8M | 14.0 | 10.1 | 47,907 |
+| **hash+LRU (the pick)** | **6.10** | **49.2M** | 11.2 | 3.5 | 10,000 (capacity) |
+| splay (no eviction) | 36.77 | 8.2M | 6.4 | 5.8 | 47,907 |
+
+**Findings vs doc 05 §4 claims:**
+
+1. **The pick is not the raw-speed winner — and that is exactly the rubric's own trade.** The plain hashes are faster (open addressing 2.84 ms; chaining 3.30 ms — 1.8–2.1× faster than the pick) because they do no recency bookkeeping and never reload evicted accounts. What the pick buys is the thing §4 actually rejected the plain hash map for: **bounded memory**. The pick holds steady state at exactly its capacity; the no-eviction candidates grow to 47,907 residents — 4.8× more accounts than they were configured to keep. Raw speed vs bounded footprint, measured on both sides.
+2. **The hand-rolled pick beats the JDK baseline on both axes.** 1.2× faster than `LinkedHashMap` (6.10 vs 7.43 ms) with 3.3× less allocation churn (11.2 vs 37.4 B/op — the oracle boxes every key/value).
+3. **Splay is rejected under its ideal workload.** §4 calls splay "genuinely clever for skewed access (the exact Zipfian pattern we have)" — so we gave it exactly that: 81% top-decile skew. It is still 6× slower than the pick and 12.9× slower than open addressing, and it grows unboundedly. Amortized "hot node near the root" theory does not survive a realistic miss stream (18.9% non-hot accesses + 47.9k distinct accounts constantly reshaping the tree). §4's determinism critique ("a single cold lookup can still walk O(N)") is not contradicted anywhere in the numbers.
+4. **Allocation-churn nuance (important not to misread the table):** alloc B/op is *lifetime* churn, not steady state. The unbounded maps allocate each account exactly once (6.4–6.9 B/op); the LRU re-allocates evicted accounts when they return (11.2 B/op). Churn and footprint are different metrics, and the pick's real memory win is the resident bound (10,000 vs 47,907 entries).
+5. **First-run clean sweep again:** all five rows passed validation immediately (contrast Run 4). The LRU lockstep check — 4 checkpoints × full 100k-id residency equality — passed untouched on the first replay.
+
+**Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; one seeded stream at Zipf s = 1.0 (the `--zipf` flag exists for sensitivity runs — a sharper exponent would only strengthen the splay rejection, a flatter one weakens the locality story; noted, not run). Oracle is same-family (`LinkedHashMap`) but JDK-hardened — the independence bar this module's brief set. Raw rows appended to `results/raw_results.csv`.
 

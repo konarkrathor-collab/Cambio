@@ -42,7 +42,7 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 - [x] **Ladder v1** — unsorted array, sorted array, flat array, skip list, radix-16 (+ TreeMap baseline/oracle)
 - [ ] **Ladder v2** — BST, AVL, splay, red-black, 2-3, B-tree, B+ (syllabus trees)
 - [x] **Queue** — array, singly LL, DLL, DLL+hash, tree-by-ID (order queue + O(1) cancel; seeded 300k-op workload, oracle-gated — see RESULTS.md Run 6)
-- [ ] **Cache** — hash chaining, open addressing, hash+LRU, splay (Zipf workloads)
+- [x] **Cache** — hash chaining, open addressing, hash+LRU, splay (Zipf workloads; full-residency LRU verification — see RESULTS.md Run 7)
 - [x] **Arbitrage** — Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF (negative cycles; real Frankfurter data + synthetic, oracle-gated at small V)
 - [ ] **Ticker** — hash set, sorted array, TST, trie (+ autocomplete)
 - [ ] **Compression** — Huffman, RLE, LZW (ratio + roundtrip + speed)
@@ -56,6 +56,9 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 
 ./run.sh queue --n 300000 --seed 42 --reps 7 --warmup 3
 # queue flags: --n --seed --reps --warmup --out
+
+./run.sh cache --n 300000 --seed 42 --reps 7 --warmup 3
+# cache flags: --n --seed --reps --warmup --universe --capacity --zipf --out
 
 ./run.sh arbitrage --graph real --seed 42 --reps 7 --warmup 3
 ./run.sh arbitrage --graph synthetic --v 8 --inject true --seed 42 --reps 7 --warmup 3
