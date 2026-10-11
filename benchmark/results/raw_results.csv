@@ -52,3 +52,38 @@ cache,hash-chaining,300000,42,7,ok,3.122,3.304,3.650,90791008,10.45,6.9,finalSiz
 cache,hash-open,300000,42,7,ok,2.690,2.836,3.123,105773468,10.11,14.0,finalSize=47907 capacity=10000
 cache,hash+LRU,300000,42,7,ok,6.021,6.100,6.315,49180997,3.52,11.2,finalSize=10000 capacity=10000
 cache,splay,300000,42,7,ok,36.284,36.773,38.888,8158261,5.75,6.4,finalSize=47907 capacity=10000
+cache,oracle-linkedMapLRU,300000,42,7,ok,6.809,7.001,7.814,42853317,11.61,37.4,finalSize=10000 capacity=10000
+cache,hash-chaining,300000,42,7,ok,3.532,3.637,3.917,82480825,7.70,6.9,finalSize=47907 capacity=10000
+cache,hash-open,300000,42,7,ok,2.616,2.638,2.921,113744076,10.75,14.0,finalSize=47907 capacity=10000
+cache,hash+LRU,300000,42,7,ok,5.979,6.080,6.362,49342105,4.64,11.2,finalSize=10000 capacity=10000
+cache,splay,300000,42,7,ok,34.068,34.328,35.609,8739179,3.73,6.4,finalSize=47907 capacity=10000
+ticker,oracle-linearScan,300000,42,7,ok,40.163,41.937,46.641,7153524,11.21,0.0,mode=exact
+ticker,hash-set,300000,42,7,ok,2.783,3.016,4.075,99465374,35.11,0.0,mode=exact
+ticker,sorted-array,300000,42,7,ok,11.144,11.280,12.208,26596924,8.23,0.0,mode=exact
+ticker,tst,300000,42,7,ok,8.573,8.691,10.344,34518301,19.02,0.0,mode=exact
+ticker,trie,300000,42,7,ok,2.968,3.037,3.099,98797958,2.05,0.2,mode=exact
+ticker,oracle-linearScan,300000,42,7,ok,61.193,61.261,63.469,4897120,3.61,0.0,mode=prefix
+ticker,hash-set,300000,42,7,na,0,0,0,0,0,-1,mode=prefix prefixSearch structurally unsupported
+ticker,sorted-array,300000,42,7,ok,16.216,16.429,17.545,18259884,6.79,0.0,mode=prefix
+ticker,tst,300000,42,7,FAIL,0.000,0.000,0.000,NaN,NaN,-1.0,checksum mismatch (a query answered differently from the oracle)
+ticker,trie,300000,42,7,ok,35.015,35.256,38.574,8509280,9.41,116.5,mode=prefix
+ticker,oracle-linearScan,300000,42,7,ok,42.109,43.132,44.298,6955453,2.70,0.0,mode=exact
+ticker,hash-set,300000,42,7,ok,2.931,3.052,3.549,98293526,16.28,0.0,mode=exact
+ticker,sorted-array,300000,42,7,ok,11.178,11.328,12.777,26483928,12.79,0.0,mode=exact
+ticker,tst,300000,42,7,ok,8.566,8.647,9.772,34696120,13.01,0.0,mode=exact
+ticker,trie,300000,42,7,ok,3.003,3.025,3.085,99166735,1.98,0.2,mode=exact
+ticker,oracle-linearScan,300000,42,7,ok,63.837,63.977,64.368,4689213,0.61,0.0,mode=prefix
+ticker,hash-set,300000,42,7,na,0,0,0,0,0,-1,mode=prefix prefixSearch structurally unsupported
+ticker,sorted-array,300000,42,7,ok,16.385,16.538,16.865,18139950,1.98,0.0,mode=prefix
+ticker,tst,300000,42,7,ok,16.426,16.465,17.613,18220099,6.97,0.0,mode=prefix
+ticker,trie,300000,42,7,ok,33.537,34.093,36.615,8799568,7.40,0.2,mode=prefix
+ticker,oracle-linearScan,300000,42,7,ok,39.498,40.894,42.500,7336092,3.93,0.0,mode=exact
+ticker,hash-set,300000,42,7,ok,2.775,2.922,3.525,102663572,20.63,0.0,mode=exact
+ticker,sorted-array,300000,42,7,ok,11.112,11.327,12.023,26484900,6.15,0.0,mode=exact
+ticker,tst,300000,42,7,ok,8.514,8.624,9.643,34787146,11.82,0.0,mode=exact
+ticker,trie,300000,42,7,ok,2.960,3.033,3.056,98902479,0.73,0.2,mode=exact
+ticker,oracle-linearScan,300000,42,7,ok,61.638,63.383,63.650,4733105,0.42,0.0,mode=prefix
+ticker,hash-set,300000,42,7,na,0,0,0,0,0,-1,mode=prefix prefixSearch structurally unsupported
+ticker,sorted-array,300000,42,7,ok,16.728,17.017,17.589,17629387,3.36,0.0,mode=prefix
+ticker,tst,300000,42,7,ok,16.121,16.390,17.775,18303983,8.45,0.0,mode=prefix
+ticker,trie,300000,42,7,ok,10.523,10.627,11.245,28229537,5.81,0.2,mode=prefix

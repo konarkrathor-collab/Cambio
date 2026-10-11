@@ -44,7 +44,7 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 - [x] **Queue** — array, singly LL, DLL, DLL+hash, tree-by-ID (order queue + O(1) cancel; seeded 300k-op workload, oracle-gated — see RESULTS.md Run 6)
 - [x] **Cache** — hash chaining, open addressing, hash+LRU, splay (Zipf workloads; full-residency LRU verification — see RESULTS.md Run 7)
 - [x] **Arbitrage** — Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF (negative cycles; real Frankfurter data + synthetic, oracle-gated at small V)
-- [ ] **Ticker** — hash set, sorted array, TST, trie (+ autocomplete)
+- [x] **Ticker** — hash set, sorted array, TST, trie (+ autocomplete; two-phase exact/prefix workload, explicit N/A row for hash set — see RESULTS.md Run 8)
 - [ ] **Compression** — Huffman, RLE, LZW (ratio + roundtrip + speed)
 
 ## Run it
@@ -59,6 +59,9 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 
 ./run.sh cache --n 300000 --seed 42 --reps 7 --warmup 3
 # cache flags: --n --seed --reps --warmup --universe --capacity --zipf --out
+
+./run.sh ticker --n 300000 --seed 42 --reps 7 --warmup 3
+# ticker flags: --n --seed --reps --warmup --out
 
 ./run.sh arbitrage --graph real --seed 42 --reps 7 --warmup 3
 ./run.sh arbitrage --graph synthetic --v 8 --inject true --seed 42 --reps 7 --warmup 3

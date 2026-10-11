@@ -52,7 +52,8 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 - [x] Arbitrage (Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF) — see below
 - [x] Queue (array, singly list, DLL, tree-by-id, DLL+hash) — see Run 6
 - [x] Cache (hash chaining, open addressing, hash+LRU, splay; Zipfian stream) — see Run 7
-- [ ] Then: ticker / compression benches
+- [x] Ticker (hash set, sorted array, TST, trie; two-phase exact/prefix workload) — see Run 8
+- [ ] Then: compression bench
 - [ ] Deeper-book adversarial queue run (array O(n)-shift divergence at realistic depth)
 
 ---
@@ -230,4 +231,43 @@ the bugs documented in Run 4, kept as an honest record rather than scrubbed).
 5. **First-run clean sweep again:** all five rows passed validation immediately (contrast Run 4). The LRU lockstep check — 4 checkpoints × full 100k-id residency equality — passed untouched on the first replay.
 
 **Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; one seeded stream at Zipf s = 1.0 (the `--zipf` flag exists for sensitivity runs — a sharper exponent would only strengthen the splay rejection, a flatter one weakens the locality story; noted, not run). Oracle is same-family (`LinkedHashMap`) but JDK-hardened — the independence bar this module's brief set. Raw rows appended to `results/raw_results.csv`.
+
+## Run 8 — Ticker registry: exact-match validation + autocomplete (two-phase)
+
+**Command:** `./run.sh ticker --n 300000 --seed 42 --reps 7 --warmup 3`
+**Data:** a 132-pair universe ("USD/EUR"-style — 12 currencies quoted in every direction; the first 8 match doc 06's roster), loaded once in a seeded shuffle, then queried. **Two phases, deliberately:** phase 1 (insert + contains) gives the hash set — which CANNOT do prefix search — a fair timed baseline; phase 2 (insert + contains 65% / autocomplete 35%, avg 6.9 matches per prefix) is the workload this subsystem exists for. ~60% of contains targets are registered pairs, ~40% synthetic typos; prefix lengths 1–6. All rows oracle-gated (checksums `0x6abd41c49b164a6` / `0x12d276fbe26e1156`; the prefix checksum includes an order-independent fold of every returned match set, since candidates may return matches in any order).
+
+### Phase 1 — exact-match workload (insert + contains)
+
+| structure | median ms | ops/sec | alloc B/op | spread % |
+|:---|--:|--:|--:|--:|
+| oracle-linearScan (naive baseline) | 40.89 | 7.3M | 0.0 | 3.9 |
+| **hash-set** | **2.92** | **102.7M** | 0.0 | 20.6 |
+| sorted-array | 11.33 | 26.5M | 0.0 | 6.2 |
+| tst | 8.62 | 34.8M | 0.0 | 11.8 |
+| trie | 3.03 | 98.9M | 0.2 | 0.7 |
+
+### Phase 2 — prefix workload (insert + contains + prefixSearch)
+
+| structure | median ms | ops/sec | alloc B/op | spread % |
+|:---|--:|--:|--:|--:|
+| oracle-linearScan (naive baseline) | 63.38 | 4.7M | 0.0 | 0.4 |
+| hash-set | — | — | — | **N/A — prefixSearch structurally unsupported** |
+| sorted-array | 17.02 | 17.6M | 0.0 | 3.4 |
+| tst | 16.39 | 18.3M | 0.0 | 8.5 |
+| **trie (the pick)** | **10.63** | **28.2M** | 0.2 | 5.8 |
+
+**Findings vs doc 05 §5 claims:**
+
+1. **The "three-way tie at 3.65" does not survive measurement — it was hiding both a capability gap and a performance gap.** Hash Set is the fastest exact-matcher (2.92 ms — a statistical tie with the trie's 3.03, ~100M ops/s each) and simultaneously **structurally absent from prefix search**: its phase-2 row is an explicit N/A *observed by attempting the workload*, not excluded by assumption. Sorted Array and TST lose to the Trie on the prefix workload (17.02 and 16.39 vs 10.63 ms) *and* to Hash Set on exact match — their tied 3.65 was an artifact of additive scoring, exactly as §5's rubric-limitation note suspected.
+2. **The pick wins the workload it exists for**: fastest prefix search by ~1.5×, and the only candidate that is simultaneously ≈best-in-class at exact match (3.03 vs hash-set's 2.92).
+3. **Naive baseline**: the linear list — the obvious first draft — is 6–14× slower than the winning structures; the benchmark quantifies why the registry is not just an ArrayList.
+4. **Cost structure**: 104,905 autocomplete calls × avg 6.9 matches ≈ 101 ns/op for the trie (the O(L + K) profile made visible); sorted-array's binary-search + contiguous-scan is decent but pays ~7 string comparisons per op.
+
+**Two implementation findings during development (documented, not silently corrected — all variants retained in the raw CSV):**
+
+1. **A real bug, caught by the oracle gate** (third such catch, after Run 4's two): the TST's first `prefixSearch` also enumerated the prefix node's LEFT/RIGHT sibling subtrees — at the prefix's final character position those keys do not share the prefix — returning wrong match sets (`FAIL — checksum mismatch` on the first phase-2 run). Fixed by enumerating only the mid-subtree below the prefix node; the fix is documented in the class itself.
+2. **A performance artifact, corrected for fairness**: the trie's first version scanned all 27 child slots per subtree node during autocomplete and lost to the sorted array/TST (34.09 vs ~16.5 ms). Replacing the scan with a **child bitmap** — the same technique the architecture doc specifies for the radix tree's nodes — brought it to 10.63 ms (**3.2×**). Terminal nodes also now store the original string reference (zero-allocation results) — matching what the sorted array gets for free — so the comparison stays structural rather than about result materialization (reconstruction had cost the trie 116.5 B/op of churn in the first run).
+
+**Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; one seeded session (load order is a seeded shuffle; TST shape depends on it — not balanced). Everything is at a 132-pair scale; the trie's lead is expected to grow with universe size (fixed-depth walk vs O(log n) compares), but that projection is untested here. Raw rows appended to `results/raw_results.csv` — including the buggy-run and pre-bitmap rows as the honest record.
 

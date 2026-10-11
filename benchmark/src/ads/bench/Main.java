@@ -35,6 +35,13 @@ import ads.bench.queue.QueueBench;
 import ads.bench.queue.QueueWorkload;
 import ads.bench.queue.SinglyListQueueOps;
 import ads.bench.queue.TreeQueueOps;
+import ads.bench.ticker.HashSetTicker;
+import ads.bench.ticker.LinearListOracle;
+import ads.bench.ticker.SortedArrayTicker;
+import ads.bench.ticker.TickerBench;
+import ads.bench.ticker.TickerWorkload;
+import ads.bench.ticker.TrieTicker;
+import ads.bench.ticker.TstTicker;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -58,6 +65,8 @@ public final class Main {
         + " [--out FILE]");
     System.out.println("   or: run.sh cache [--n N] [--seed S] [--reps R] [--warmup W]"
         + " [--universe U] [--capacity C] [--zipf S] [--out FILE]");
+    System.out.println("   or: run.sh ticker [--n N] [--seed S] [--reps R] [--warmup W]"
+        + " [--out FILE]");
   }
 
   public static void main(String[] args) throws IOException {
@@ -75,6 +84,10 @@ public final class Main {
     }
     if (args[0].equals("cache")) {
       runCache(args);
+      return;
+    }
+    if (args[0].equals("ticker")) {
+      runTicker(args);
       return;
     }
     if (!args[0].equals("ladder")) {
@@ -472,6 +485,144 @@ public final class Main {
     System.out.println(anyFailed
         ? "RESULT: FAILURES PRESENT (a structure disagreed with the oracle)"
         : "RESULT: all candidates validated against the oracle and timed OK");
+    if (anyFailed) {
+      System.exit(1);
+    }
+  }
+
+  /** Ticker bench: ./run.sh ticker [--n N] [--seed S] [--reps R] [--warmup W] [--out FILE] */
+  private static void runTicker(String[] args) throws IOException {
+    int n = 300_000;
+    long seed = 42;
+    int reps = 7;
+    int warmup = 3;
+    String outPath = "results/raw_results.csv";
+    for (int i = 1; i + 1 < args.length; i += 2) {
+      String k = args[i];
+      String v = args[i + 1];
+      switch (k) {
+        case "--n": n = Integer.parseInt(v); break;
+        case "--seed": seed = Long.parseLong(v); break;
+        case "--reps": reps = Integer.parseInt(v); break;
+        case "--warmup": warmup = Integer.parseInt(v); break;
+        case "--out": outPath = v; break;
+        default:
+          usage();
+          System.exit(2);
+      }
+    }
+
+    final long fSeed = seed;
+    AllocCounter alloc = new AllocCounter();
+    boolean anyFailed = false;
+    Path out = Paths.get(outPath);
+    if (out.getParent() != null) {
+      Files.createDirectories(out.getParent());
+    }
+    boolean needHeader = !Files.exists(out) || Files.size(out) == 0;
+
+    try (BufferedWriter csv = Files.newBufferedWriter(out, StandardCharsets.UTF_8,
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+      if (needHeader) {
+        csv.write(BenchResult.csvHeader());
+        csv.newLine();
+      }
+
+      // ---- Phase 1: exact-match workload (insert + contains) — every candidate's fair shot
+      System.out.println("=== phase 1: exact-match workload (insert + contains) ===");
+      TickerWorkload exactW = TickerWorkload.generate(n, fSeed, "exact");
+      System.out.println("workload: " + exactW.describe());
+      LinearListOracle exactOracle = new LinearListOracle();
+      long exactChecksum = TickerBench.replay(exactOracle, exactW);
+      System.out.println("oracle: checksum=0x" + Long.toHexString(exactChecksum)
+          + " registry=" + exactOracle.size());
+      System.out.println("alloc counter: " + (alloc.isEnabled() ? "enabled" : "UNAVAILABLE"));
+      System.out.println();
+      System.out.println(BenchResult.header());
+
+      Map<String, TickerBench.Factory> exactCandidates = new LinkedHashMap<>();
+      exactCandidates.put("oracle-linearScan", LinearListOracle::new);
+      exactCandidates.put("hash-set", HashSetTicker::new);
+      exactCandidates.put("sorted-array", SortedArrayTicker::new);
+      exactCandidates.put("tst", TstTicker::new);
+      exactCandidates.put("trie", TrieTicker::new);
+
+      for (Map.Entry<String, TickerBench.Factory> e : exactCandidates.entrySet()) {
+        String name = e.getKey();
+        String problem = TickerBench.verify(e.getValue().create(), exactW, exactChecksum);
+        BenchResult r;
+        if (problem != null) {
+          anyFailed = true;
+          r = TickerBench.failed("ticker", name, exactW, reps, problem);
+        } else {
+          r = TickerBench.timed("ticker", name, e.getValue(), exactW, warmup, reps, alloc,
+              "mode=exact");
+        }
+        System.out.println(r.row());
+        csv.write(r.csv());
+        csv.newLine();
+      }
+
+      // ---- Phase 2: prefix workload — autocomplete is the reason this subsystem exists.
+      // hash-set is ATTEMPTED here, not pre-excluded: its structural refusal surfaces as an
+      // explicit N/A row (doc 05 §5's rubric-limitation note, made undeniable).
+      System.out.println();
+      System.out.println("=== phase 2: prefix workload (insert + contains + prefixSearch) ===");
+      TickerWorkload prefixW = TickerWorkload.generate(n, fSeed, "prefix");
+      System.out.println("workload: " + prefixW.describe());
+      LinearListOracle prefixOracle = new LinearListOracle();
+      long prefixChecksum = TickerBench.replay(prefixOracle, prefixW);
+      System.out.println("oracle: checksum=0x" + Long.toHexString(prefixChecksum)
+          + " registry=" + prefixOracle.size());
+      System.out.println();
+      System.out.println(BenchResult.header());
+
+      Map<String, TickerBench.Factory> prefixCandidates = new LinkedHashMap<>();
+      prefixCandidates.put("oracle-linearScan", LinearListOracle::new);
+      prefixCandidates.put("hash-set", HashSetTicker::new);
+      prefixCandidates.put("sorted-array", SortedArrayTicker::new);
+      prefixCandidates.put("tst", TstTicker::new);
+      prefixCandidates.put("trie", TrieTicker::new);
+
+      for (Map.Entry<String, TickerBench.Factory> e : prefixCandidates.entrySet()) {
+        String name = e.getKey();
+        String problem = null;
+        boolean unsupported = false;
+        try {
+          problem = TickerBench.verify(e.getValue().create(), prefixW, prefixChecksum);
+        } catch (UnsupportedOperationException structural) {
+          unsupported = true;
+        } catch (RuntimeException ex) {
+          problem = "threw " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
+        }
+        if (unsupported) {
+          System.out.println(String.format("%-16s %10s %12s %12s %9s %10s %6s  %s",
+              name, "-", "-", "-", "-", "-", "N/A",
+              "prefixSearch structurally unsupported (hash set: no prefix ordering exists)"));
+          csv.write("ticker," + name + "," + n + "," + fSeed + "," + reps
+              + ",na,0,0,0,0,0,-1,mode=prefix prefixSearch structurally unsupported");
+          csv.newLine();
+          continue;
+        }
+        BenchResult r;
+        if (problem != null) {
+          anyFailed = true;
+          r = TickerBench.failed("ticker", name, prefixW, reps, problem);
+        } else {
+          r = TickerBench.timed("ticker", name, e.getValue(), prefixW, warmup, reps, alloc,
+              "mode=prefix");
+        }
+        System.out.println(r.row());
+        csv.write(r.csv());
+        csv.newLine();
+      }
+    }
+
+    System.out.println();
+    System.out.println(anyFailed
+        ? "RESULT: FAILURES PRESENT (a structure disagreed with the oracle)"
+        : "RESULT: all candidates validated against the oracle and timed OK"
+            + " (hash-set N/A on phase 2 is structural incapability, not a failure)");
     if (anyFailed) {
       System.exit(1);
     }

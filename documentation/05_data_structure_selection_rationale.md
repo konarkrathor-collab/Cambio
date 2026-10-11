@@ -205,6 +205,20 @@ All four candidate classes were implemented from scratch behind a frozen `CacheO
 
 **Winner: Trie (unchanged).** For a tiny fixed alphabet and a prefix-query requirement, nothing beats direct character-indexed branching — it's the textbook-correct structure for exactly this problem, so we kept it.
 
+### Benchmark Evidence (measured — see `benchmark/results/RESULTS.md` Run 8)
+
+All four candidates were implemented from scratch behind a frozen `TickerOps` contract over a 132-pair universe, and the benchmark runs **two phases by design**: an exact-match workload (insert + contains) that a hash set *can* serve — giving it a fair timed baseline — and a prefix workload (insert + contains 65% / autocomplete 35%, avg 6.9 matches per prefix) which is the subsystem's reason to exist. All rows are oracle-gated; the hash set's incapability is surfaced as an explicit N/A row, observed by *attempting* the workload, not assumed.
+
+| structure | phase 1: exact match (median ms) | phase 2: prefix (median ms) |
+| :--- | --: | --: |
+| naive linear scan (baseline) | 40.89 | 63.38 |
+| hash set | **2.92** | N/A — prefixSearch structurally unsupported |
+| sorted array + binary search | 11.33 | 17.02 |
+| ternary search tree | 8.62 | 16.39 |
+| **Trie** | 3.03 | **10.63** |
+
+**Findings:** the flagged rubric limitation is now measured, not merely noted. The three-way 3.65 tie does **not** survive contact with a workload: Hash Set is the fastest exact-matcher (2.92 ms — a statistical tie with the trie's 3.03) and is *structurally absent* from prefix search; Sorted Array and TST lose to the Trie on the workload it exists for (17.02 / 16.39 vs 10.63 ms) while also losing to Hash Set on exact match — their tied 3.65 was an artifact of additive scoring, exactly as the note above suspected. The naive linear scan runs 6–14× slower than the winners, quantifying why the registry is not just a list. (Two implementation findings during development — a TST enumeration bug the oracle gate caught, and a trie child-iteration refinement (27-slot scan → child bitmap, the same technique the architecture doc specifies for radix nodes) worth 3.2× on the prefix workload — are documented in RESULTS.md Run 8.)
+
 ---
 
 ## 6. Trade Telemetry Log Compression
@@ -234,9 +248,9 @@ All four candidate classes were implemented from scratch behind a frozen `CacheO
 | Order Queue + Cancel | **DLL + Hash Map** | Plain DLL (4.20) | Needed O(1) *lookup* before O(1) unlink — the Hash Map supplies exactly that | **Measured** |
 | Arbitrage Detection | **Bellman-Ford** | SPFA (4.35) | Fixed, input-order-independent iteration count and simpler implementation beat SPFA's average-case speed, which is immaterial at this graph size (10–50 vertices) | **Measured** |
 | Account Cache | **Hash Map + LRU** | Plain Hash Map (3.90) | Point-lookup workload doesn't need a tree's ordering; LRU closes the one real gap (unbounded memory) a plain hash map has | **Measured** |
-| Ticker Lookup | **Trie** | 3-way tie: Hash Set / Sorted Array / Ternary Search Tree (3.65 each) | Only the Trie and TST can perform prefix queries at all; Trie wins on alphabet size (see rubric-limitation note in §5) | Rubric only |
+| Ticker Lookup | **Trie** | 3-way tie: Hash Set / Sorted Array / Ternary Search Tree (3.65 each) | Only the Trie and TST can perform prefix queries at all; Trie wins on alphabet size (see rubric-limitation note in §5) | **Measured** |
 | Log Compression | **Huffman Coding** | ANS (3.90) | Provably correct and simple to implement from scratch; ANS's ratio gain isn't worth the implementation risk for audit-critical logs | Rubric only |
 
 **Overall conclusion:** this document was corrected after an external review found that most of its original weighted-sum arithmetic did not match its own stated formula, and that the original Price Ladder scoring overstated the Radix Tree's memory efficiency and industry precedent. With the numbers fixed, four of six subsystems are decisive wins (Order Queue, Arbitrage Detection, Account Cache, Log Compression), one has a genuine three-way statistical tie resolved by a hard capability requirement (Ticker Lookup), and one — Price Ladder — was a close engineering judgment call *when this document was rubric-only*.
 
-**Four of the six verdicts are no longer rubric-only.** Price Ladder, Arbitrage Detection, Order Queue, and Account Cache have since been implemented from scratch and benchmarked (`benchmark/results/RESULTS.md`), against real data where it exists (a live Frankfurter currency snapshot for arbitrage) and a correctness oracle independent of every candidate. All four benchmarks *confirmed* their section's verdict rather than overturning it, and in the Price Ladder's case sharpened it — Radix Tree turned out to measurably beat the Red-Black Tree proxy outright (faster *and* 6.7× less memory), not just hold a defensible tie. Building the arbitrage benchmark also surfaced two real implementation bugs along the way, documented rather than hidden. The remaining two subsystems (Ticker Lookup, Log Compression) are still rubric-only predictions pending the same treatment — the benchmark roadmap in `benchmark/README.md` has them queued next.
+**Five of the six verdicts are no longer rubric-only.** Price Ladder, Arbitrage Detection, Order Queue, Account Cache, and Ticker Lookup have since been implemented from scratch and benchmarked (`benchmark/results/RESULTS.md`), against real data where it exists (a live Frankfurter currency snapshot for arbitrage) and a correctness oracle independent of every candidate. All five benchmarks *confirmed* their section's verdict rather than overturning it, and in the Price Ladder's case sharpened it — Radix Tree turned out to measurably beat the Red-Black Tree proxy outright (faster *and* 6.7× less memory), not just hold a defensible tie. Building the arbitrage benchmark also surfaced two real implementation bugs along the way, documented rather than hidden. The remaining subsystem (Log Compression) is still a rubric-only prediction pending the same treatment — the benchmark roadmap in `benchmark/README.md` has it queued next.
