@@ -37,7 +37,7 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 
 ## Findings vs doc 05 §1 claims
 
-1. **"Close call" confirmed, not a dominant win.** In a narrow-range book the flat array wins on raw speed (6.24 ms vs radix 22.28 ms) — its 4.10 raw rubric score was justified. Radix16 sits within ~5 % of sorted-array (21.18 ms) and beats the TreeMap baseline (25.22 ms) while using **6.7× less memory per op** (8.6 vs 57.8 B/op).
+1. **"Close call" confirmed, not a dominant win.** In a narrow-range book the flat array wins on raw speed (6.24 ms vs radix 22.28 ms) — its 4.10 raw rubric score was justified. Radix16 sits within ~5 % of sorted-array (21.18 ms) and beats the TreeMap baseline (25.22 ms) while using **6.7× less memory per op** (8.6 vs 57.8 B/op). **Boxing caveat:** `TreeMap<Long,Long>` boxes keys/values, so this ratio is an upper bound on the gap versus a primitive-keyed hand-rolled RB — doc 05 §1 carries the same caveat; Ladder v2's RB candidate settles it.
 2. **The robustness override is now empirically supported.** Widening the tick range leaves every structure's cost unchanged *except* the flat array (105× time, 263× memory). Radix/skip/array costs scale with ACTIVE levels, not the address space — "empty branches are pruned" as claimed.
 3. **Memory ladder (narrow range, B/op incl. construction):** flat 1.7 < radix16 8.6 < sorted 16.0 = unsorted 16.0 < oracle 57.8 < skip-list 83.6. Radix is ~2× leaner than sorted arrays at comparable speed.
 4. **Determinism:** spread ≤ 4 % across 7 reps for most candidates (JIT/GC noise); one cold-machine outlier (skip-list 34 % in the very first run) — medians absorb it. No candidate ever failed the oracle.
@@ -58,8 +58,8 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 
 **Command:** `./run.sh arbitrage --graph real --seed 42 --reps 7 --warmup 3`
 **Data:** a genuine captured snapshot — `GET https://api.frankfurter.dev/v1/latest?base=USD`,
-2026-10-09, archived verbatim at `data/frankfurter_usd_2026-10-09.json` (the same source
-specified in `documentation/06_market_data_ingestion_service.md`). 8-currency roster (USD,
+2026-10-09, archived verbatim at `data/frankfurter_usd_2026-10-09.json` (the Frankfurter API
+doc 06 now keeps as its *fallback* source — see that doc's revision note). 8-currency roster (USD,
 EUR, GBP, JPY, AUD, CAD, CHF, INR), complete graph, 56 directed edges, `w = -ln(rate)`.
 **Correctness:** verified against an independent brute-force oracle (exhaustive simple-cycle
 enumeration — a different algorithm family entirely from shortest-path relaxation or SCC

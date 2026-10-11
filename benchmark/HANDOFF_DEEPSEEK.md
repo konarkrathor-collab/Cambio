@@ -18,6 +18,8 @@ Read these, in order, before starting Task 1:
 4. `benchmark/results/RESULTS.md` — read the whole thing, especially **Run 4's "two real bugs found and fixed"** section. This project's standing norm: when your own code disagrees with your own oracle, that's a success of the harness, not a failure to hide. Document bugs you find the same way — what broke, why, the fix — never silently correct and move on.
 5. `documentation/05_data_structure_selection_rationale.md` — sections 2, 4, 5, 6 (Order Queue, Account Cache, Ticker Lookup, Log Compression) are the four subsystems you're benchmarking. Each already has a weighted-rubric prediction of which candidate wins and why the others lose — **your job is to test those predictions against real measurements, not to re-litigate the rubric.** Sections 1 and 3 (Price Ladder, Arbitrage) already went through this exact benchmark-then-feedback cycle — read their "Benchmark Evidence (measured)" subsections as the template for what you'll write for sections 2/4/5/6.
 
+6. `documentation/06_market_data_ingestion_service.md` — the Market Data Ingestion spec that the arbitrage module's real-data fixture cites. Note it has been **revised since that fixture was captured**: Finnhub's real-time WebSocket (OANDA feed) is now the primary source and Frankfurter is the degraded fallback. Don't "modernize" the archived Frankfurter snapshot in `benchmark/data/` — a frozen deterministic fixture is the right call for benchmarking; just never describe it as doc 06's primary source.
+
 **Also read `.gitignore`** — `benchmark/out/` and `*.class` are already excluded; don't fight that.
 
 ---

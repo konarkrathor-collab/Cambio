@@ -41,7 +41,8 @@ public final class ArbitrageWorkload {
 
   /**
    * Captured 2026-10-09 from the free, keyless Frankfurter API (ECB reference rates) — the
-   * exact source named in documentation/06_market_data_ingestion_service.md:
+   * same API documentation/06_market_data_ingestion_service.md now keeps as its *fallback*
+   * source (doc 06's primary moved to a live Finnhub WebSocket after this capture):
    * {@code GET https://api.frankfurter.dev/v1/latest?base=USD}. Raw response archived at
    * {@code benchmark/data/frankfurter_usd_2026-10-09.json}. Units: 1 USD = rate[i] units of
    * currency i. Roster matches doc 06 §4's proposed 8-currency graph.
