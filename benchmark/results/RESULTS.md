@@ -47,8 +47,9 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 
 ## Next
 
-- [ ] **Ladder v2** — BST, AVL, splay, red-black, 2-3, B-tree, B+ (completes doc 05 §1's candidate set + the syllabus trees)
-- [ ] Sorted-insertion adversarial pattern (BST degeneration demo)
+- [x] **Ladder v2a** — BST, AVL, splay, red-black hand-rolled (+ rotation counters; RB retires the TreeMap stand-in) — see Run 10
+- [x] Sorted-insertion adversarial pattern (BST degeneration demo) — see Run 11
+- [ ] Ladder v2b — 2-3 tree, B-tree, B+ (B+ is doc 05 §1's last unmeasured row)
 - [x] Arbitrage (Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF) — see below
 - [x] Queue (array, singly list, DLL, tree-by-id, DLL+hash) — see Run 6
 - [x] Cache (hash chaining, open addressing, hash+LRU, splay; Zipfian stream) — see Run 7
@@ -294,4 +295,66 @@ the bugs documented in Run 4, kept as an honest record rather than scrubbed).
 **Verdict, honestly stated:** the pick stands (byte-perfect first try + provable optimality within integer-length codes + curriculum alignment), but the trade's full shape is now measured — if storage cost ever outranked implementation safety for these logs, LZW's 2× smaller archives at ~1.7× the encode cost is the number to revisit, with its encoder/decoder synchronization risk as the price of admission.
 
 **Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; aggregates across three batch sizes (per-batch variation not separately reported); one seeded 5.5 MB session; ratio is for *this* data shape — real logs with a different field mix would shift the numbers (the generator is fully documented in `LogWorkload`).
+
+## Run 10 — Ladder v2: hand-rolled BST, AVL, red-black, splay join the walk workload
+
+**Command:** `./run.sh ladder --n 300000 --seed 42 --reps 7 --warmup 3`
+Same workload as Run 1; the candidate set now includes the four hand-rolled syllabus trees the roadmap promised, each oracle-gated before timing. All ten candidates validated on the first run.
+
+| structure | median ms | ops/sec | alloc B/op | spread % |
+|:---|--:|--:|--:|--:|
+| oracle-treeMap (boxed baseline) | 23.59 | 12.7M | 57.8 | 6.8 |
+| unsorted-array | 69.40 | 4.3M | 16.0 | 0.5 |
+| sorted-array | 20.67 | 14.5M | 16.0 | 0.9 |
+| flat-array | **6.04** | **49.7M** | **1.7** | 1.4 |
+| skip-list | 32.77 | 9.2M | 83.6 | 1.9 |
+| radix16 | 21.63 | 13.9M | **8.6** | 17.2 |
+| bst | **17.76** | **16.9M** | 10.5 | 2.2 |
+| avl | 21.50 | 14.0M | 10.5 | 3.3 |
+| **red-black** | **19.26** | **15.6M** | 12.6 | 2.5 |
+| splay | 32.57 | 9.2M | 10.5 | 1.8 |
+
+**Rebalance counters (fresh replays of the same workload, single rotations counted individually; double rotations = 2):**
+- red-black: 66,857 rotations (insert 37,930 / delete 28,927)
+- avl: 78,895 rotations (insert 50,057 / delete 28,838)
+- splay: 2,898,896 restructure rotations (informational)
+
+**Findings:**
+
+1. **The TreeMap stand-in is retired — and it reverses the speed half of §1's earlier comparison.** The hand-rolled RB (primitive `long` keys, no boxing) runs 19.3 ms / 12.6 B/op vs the boxed TreeMap's 23.6 ms / 57.8 B/op — 1.22× faster and 4.6× leaner. Against Radix16 (21.6 ms / 8.6 B/op) the real RB is ~12% **faster**, while radix keeps a ~32% memory edge. The §1 verdict's basis shifts honestly to memory + tick-range robustness (Run 2) — not walk-workload speed, which belongs to Red-Black.
+2. **The plain BST is the fastest tree on this workload** (17.8 ms — ahead of RB's 19.3 and AVL's 21.5): balance guarantees cost something (RB +8%, AVL +21% over unbalanced) and the walk workload never stresses balance. Run 11 is the other side of that coin.
+3. **AVL-vs-RB rotations, measured:** AVL +18% in aggregate (78,895 vs 66,857) — all of it on the insert side (+32%: 50,057 vs 37,930); delete rotations are statistically equal (28,838 vs 28,927). The textbook "AVL pays more rotations" holds as a modest insert-side premium here, not categorically.
+4. **Splay:** 2.9M restructure rotations (~43× RB's total); 32.6 ms — heavy machinery, mid-pack time on this access pattern.
+5. **Clean sweep:** all ten candidates validated first try, including the CLRS red-black delete fixup — Ladder v2 found no bugs.
+
+**Caveats:** as Run 1 (single-threaded M4; 3 discarded warmups + 7 timed reps); radix16's 17.2% spread is JIT noise on a fast row; this is a fresh full re-run, so the v1 structures' numbers shift a few percent vs Run 1 (normal run-to-run variance).
+
+## Run 11 — Sorted-insertion adversarial: the BST degeneration demo
+
+**Command:** `./run.sh ladder --pattern sorted --n 12000 --band 4000 --seed 42 --reps 7 --warmup 3`
+Same op mix as the walk pattern, but PUT targets arrive in strict **ascending** tick order (6,256 ascending inserts through an 8,001-level band; 3,058 removes; ~2,700 queries). This is the workload doc 05 §1's bullet — *"Unbalanced BST degenerates toward O(P) under sorted or monotonic order arrival"* — claimed while explicitly flagging it as having no data to back.
+
+| structure | median ms | ops/sec | alloc B/op | spread % |
+|:---|--:|--:|--:|--:|
+| oracle-treeMap | 0.88 | 13.7M | 63.8 | 23.0 |
+| unsorted-array | 5.21 | 2.3M | 16.0 | 3.2 |
+| sorted-array | 1.22 | 9.8M | 16.0 | 20.9 |
+| flat-array | 2.89 | 4.1M | 43.7 | 3.1 |
+| skip-list | 1.22 | 9.8M | 97.8 | 145.1 |
+| radix16 | 0.84 | 14.2M | 20.7 | 12.1 |
+| **bst** | **25.64** | **0.47M** | 20.9 | 2.4 |
+| avl | 0.83 | 14.4M | 20.9 | 69.2 |
+| red-black | 0.71 | 16.9M | 25.0 | 29.2 |
+| **splay** | **0.62** | **19.3M** | 20.9 | 3.4 |
+
+**Rebalance counters (same run):** red-black 7,806 (insert 6,158 / delete 1,648); avl 7,635 (insert 6,227 / delete 1,408); splay 40,231 restructures.
+
+**Findings:**
+
+1. **The claim is now backed, dramatically.** The same BST code that is the FASTEST tree on the walk workload (17.8 ms, Run 10) is **~36× slower than every balanced candidate here** (25.6 ms vs ≤ 0.88 ms) — 6,256 monotonic inserts turn it into a ~6,000-deep spine. Same code, different arrival order: the cost of not balancing, quantified.
+2. **Everything self-balancing shrugs.** RB, AVL, radix, splay, and both arrays all finish ≤ 2.9 ms; the balanced cluster sits in one sub-millisecond band (0.62–0.88 ms).
+3. **Splay is fastest here (0.62 ms)** — ascending insertion is its best case (each new maximum becomes the root in O(1)); the same structure was mid-pack on the walk workload. Its restructure count collapses from 2.9M (walk) to 40k (sorted), visualizing the shape-dependence.
+4. **AVL vs RB rotation totals converge entirely under sorted insert** (7,635 vs 7,806) — reinforcing Run 10's finding that the "AVL pays more rotations" effect is workload-dependent, not categorical.
+
+**Caveats:** sub-millisecond rows have noisy spreads (JIT/GC dominates at this absolute scale — skip-list's 145% is noise on a 1.2 ms row); the qualitative gap (25.6 ms vs ≤ 0.88 ms) dwarfs all of it. n=12,000 was sized so the adversarial run completes comfortably given the spine arithmetic (~6,256 distinct ascending inserts); a larger run would widen, not shrink, the BST gap.
 

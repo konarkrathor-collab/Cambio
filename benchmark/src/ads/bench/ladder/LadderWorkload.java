@@ -10,6 +10,13 @@ import ads.bench.core.Rng;
  * centred at {@code base + range/2}, with a realistic mix of puts, removes, best-price
  * peeks and short depth walks. Removes always target currently-populated ticks (the
  * generator tracks liveness itself), so the log is valid for every correct structure.
+ *
+ * <p>Pattern "sorted" (Ladder v2 adversarial — doc 05 §1's monotonic-arrival claim): the
+ * identical op mix, but PUT targets arrive in strictly ASCENDING tick order (cycling the
+ * band if puts ever outnumber its levels). Ascending insertion is the classic degeneration
+ * trigger for unbalanced BSTs; every self-balancing structure should be unaffected — which
+ * is exactly what the run measures. Size it with a wider band so inserts stay distinct:
+ * {@code --pattern sorted --n 12000 --band 4000}.
  */
 public final class LadderWorkload {
   public static final byte PUT = 0;
@@ -40,9 +47,10 @@ public final class LadderWorkload {
 
   public static LadderWorkload generate(int n, long seed, long base, int range, int bandHalf,
       String pattern) {
-    if (!"walk".equals(pattern)) {
+    boolean sorted = "sorted".equals(pattern);
+    if (!sorted && !"walk".equals(pattern)) {
       throw new IllegalArgumentException(
-          "unsupported pattern: " + pattern + " (v1 supports: walk)");
+          "unsupported pattern: " + pattern + " (supports: walk, sorted)");
     }
     if (bandHalf < 1 || 2 * bandHalf + 1 > range) {
       throw new IllegalArgumentException("band (" + bandHalf + ") does not fit in range (" + range + ")");
@@ -56,6 +64,7 @@ public final class LadderWorkload {
     long bandStart = base + mid - bandHalf;
     boolean[] active = new boolean[bandSize];
     int activeCount = 0;
+    int putCursor = 0; // sorted pattern: ascending cursor through the band
 
     for (int i = 0; i < n; i++) {
       byte o;
@@ -72,7 +81,7 @@ public final class LadderWorkload {
       }
       switch (o) {
         case PUT: {
-          int idx = rng.nextInt(bandSize);
+          int idx = sorted ? putCursor++ % bandSize : rng.nextInt(bandSize);
           tick[i] = bandStart + idx;
           vol[i] = 1 + rng.nextInt(1_000_000);
           if (!active[idx]) {

@@ -40,7 +40,8 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 ## Bench roadmap (doc 05 candidates + syllabus trees)
 
 - [x] **Ladder v1** — unsorted array, sorted array, flat array, skip list, radix-16 (+ TreeMap baseline/oracle)
-- [ ] **Ladder v2** — BST, AVL, splay, red-black, 2-3, B-tree, B+ (syllabus trees)
+- [x] **Ladder v2a** — BST, AVL, splay, red-black hand-rolled (rotation counters; RB retires the TreeMap stand-in — see RESULTS.md Run 10)
+- [ ] **Ladder v2b** — 2-3 tree, B-tree, B+ (syllabus trees; B+ is doc 05 §1's last unmeasured row)
 - [x] **Queue** — array, singly LL, DLL, DLL+hash, tree-by-ID (order queue + O(1) cancel; seeded 300k-op workload, oracle-gated — see RESULTS.md Run 6)
 - [x] **Cache** — hash chaining, open addressing, hash+LRU, splay (Zipf workloads; full-residency LRU verification — see RESULTS.md Run 7)
 - [x] **Arbitrage** — Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF (negative cycles; real Frankfurter data + synthetic, oracle-gated at small V)
@@ -53,6 +54,9 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 ./build.sh
 ./run.sh ladder --n 300000 --seed 42 --reps 7 --warmup 3
 # ladder flags: --n --seed --reps --warmup --base --range --band --pattern --out
+
+./run.sh ladder --pattern sorted --n 12000 --band 4000 --seed 42 --reps 7 --warmup 3
+# adversarial sorted-insertion variant of the ladder bench (BST degeneration demo)
 
 ./run.sh queue --n 300000 --seed 42 --reps 7 --warmup 3
 # queue flags: --n --seed --reps --warmup --out

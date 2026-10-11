@@ -22,7 +22,10 @@ src/ads/bench/arbitrage/ArbitrageWorkload.java
 src/ads/bench/arbitrage/ArbitrageBench.java
 src/ads/bench/arbitrage/TarjanArbitrage.java
 src/ads/bench/ladder/UnsortedArrayLadder.java
+src/ads/bench/ladder/AvlLadder.java
 src/ads/bench/ladder/LadderWorkload.java
+src/ads/bench/ladder/BstLadder.java
+src/ads/bench/ladder/RedBlackLadder.java
 src/ads/bench/ladder/TreeMapLadder.java
 src/ads/bench/ladder/RadixLadder.java
 src/ads/bench/ladder/SortedArrayLadder.java
@@ -30,6 +33,7 @@ src/ads/bench/ladder/SkipListLadder.java
 src/ads/bench/ladder/FlatArrayLadder.java
 src/ads/bench/ladder/LadderOps.java
 src/ads/bench/ladder/LadderBench.java
+src/ads/bench/ladder/SplayLadder.java
 src/ads/bench/ticker/TstTicker.java
 src/ads/bench/ticker/TrieTicker.java
 src/ads/bench/ticker/LinearListOracle.java

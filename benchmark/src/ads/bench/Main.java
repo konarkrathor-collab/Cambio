@@ -19,12 +19,16 @@ import ads.bench.cache.OpenHashCache;
 import ads.bench.cache.SplayCache;
 import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
+import ads.bench.ladder.AvlLadder;
+import ads.bench.ladder.BstLadder;
 import ads.bench.ladder.FlatArrayLadder;
 import ads.bench.ladder.LadderBench;
 import ads.bench.ladder.LadderWorkload;
 import ads.bench.ladder.RadixLadder;
+import ads.bench.ladder.RedBlackLadder;
 import ads.bench.ladder.SkipListLadder;
 import ads.bench.ladder.SortedArrayLadder;
+import ads.bench.ladder.SplayLadder;
 import ads.bench.ladder.TreeMapLadder;
 import ads.bench.ladder.UnsortedArrayLadder;
 import ads.bench.queue.ArrayQueueOps;
@@ -65,7 +69,7 @@ import java.util.TreeMap;
 public final class Main {
   private static void usage() {
     System.out.println("usage: run.sh ladder [--n N] [--seed S] [--reps R] [--warmup W]"
-        + " [--base B] [--range R] [--band H] [--pattern walk] [--out FILE]");
+        + " [--base B] [--range R] [--band H] [--pattern walk|sorted] [--out FILE]");
     System.out.println("   or: run.sh arbitrage [--graph real|synthetic] [--v V]"
         + " [--inject true|false] [--seed S] [--reps R] [--warmup W] [--out FILE]");
     System.out.println("   or: run.sh queue [--n N] [--seed S] [--reps R] [--warmup W]"
@@ -159,6 +163,10 @@ public final class Main {
     candidates.put("flat-array", () -> new FlatArrayLadder(fBase, fRange));
     candidates.put("skip-list", () -> new SkipListLadder(fSeed ^ 0x5DEECE66DL));
     candidates.put("radix16", RadixLadder::new);
+    candidates.put("bst", BstLadder::new);
+    candidates.put("avl", AvlLadder::new);
+    candidates.put("red-black", RedBlackLadder::new);
+    candidates.put("splay", SplayLadder::new);
 
     AllocCounter alloc = new AllocCounter();
     System.out.println("alloc counter: " + (alloc.isEnabled() ? "enabled" : "UNAVAILABLE"));
@@ -193,6 +201,25 @@ public final class Main {
         csv.newLine();
       }
     }
+
+    // Ladder v2 counter report: doc 05 §1 claims AVL does MORE rotations than Red-Black
+    // per structural mutation — verified with actual counters on a fresh replay of the
+    // same workload, not inferred from timing. Single rotations count individually;
+    // a double rotation counts as 2. Splay's number is informational (restructures, not
+    // a balancing counter).
+    RedBlackLadder rbCounter = new RedBlackLadder();
+    LadderBench.replay(rbCounter, w);
+    AvlLadder avlCounter = new AvlLadder();
+    LadderBench.replay(avlCounter, w);
+    SplayLadder splayCounter = new SplayLadder();
+    LadderBench.replay(splayCounter, w);
+    System.out.println();
+    System.out.println("rebalance counters (fresh replay of the same workload):");
+    System.out.printf("  red-black: %d rotations (insert %d, delete %d)%n",
+        rbCounter.rotations(), rbCounter.insertRotations(), rbCounter.deleteRotations());
+    System.out.printf("  avl:       %d rotations (insert %d, delete %d)%n",
+        avlCounter.rotations(), avlCounter.insertRotations(), avlCounter.deleteRotations());
+    System.out.printf("  splay:     %d restructure rotations%n", splayCounter.rotations());
 
     System.out.println();
     System.out.println(anyFailed
