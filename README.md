@@ -26,8 +26,9 @@ Mini Project/
 │   ├── 02_system_architecture_and_design.md   # Architectural Specifications & API Contracts
 │   ├── 03_data_structures_deep_dive.md        # Mathematical Formulations & Complexity Analysis
 │   ├── 04_project_roadmap_and_milestones.md   # 14-Week Development Roadmap & Modules
-│   ├── 05_data_structure_selection_rationale.md # Why: Comparative Survey of Rejected Alternatives
-│   └── 06_market_data_ingestion_service.md    # Real Forex API Integration & Synthetic Jitter Model
+│   ├── 05_data_structure_selection_rationale.md # Why: Comparative Survey, Now Benchmark-Verified
+│   ├── 06_market_data_ingestion_service.md    # Real-Time Forex via Finnhub WebSocket + Fallback
+│   └── 07_team_workplan_and_phases.md         # Team Split, Backend Modules & Execution Phases
 └── ...
 ```
 

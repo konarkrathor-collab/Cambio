@@ -30,4 +30,4 @@
 ---
 
 ## Project Execution Note
-Specific sub-module ownership and individual responsibilities will be finalized after internal group alignment and discussion among all team members.
+A proposed three-way split of sub-module ownership (vertical slices: Exchange Engine, Scanner, Vault & Directory) and the execution phases from here are drafted in **[07_team_workplan_and_phases.md](./07_team_workplan_and_phases.md)** — pending final confirmation by all three members at a team sync.
