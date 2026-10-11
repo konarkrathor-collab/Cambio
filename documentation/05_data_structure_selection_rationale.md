@@ -1,0 +1,171 @@
+# Data Structure Selection Rationale — Comparative Market Survey
+
+This document exists to answer one question for the faculty panel: **"Why this data structure, and not any of the others available?"** For every subsystem in the project, we surveyed every realistic candidate data structure/algorithm used for that exact problem class — in academia and in production trading/compression systems — scored them against a fixed rubric, and recorded why the losing candidates lost. Nothing here is a default; every choice is a decision.
+
+---
+
+## Scoring Rubric
+
+Each candidate is scored **1 (poor) – 5 (excellent)** on five weighted criteria:
+
+| Criterion | Weight | What it measures |
+| :--- | :-: | :--- |
+| **Operation Fit** | 35% | How well the structure's native complexity matches *this specific* access pattern (not its complexity in general) |
+| **Space Efficiency** | 15% | Memory overhead relative to the data actually held |
+| **Implementation Feasibility** | 20% | Can a 3-person team build and correctness-test it from scratch in a semester, without bugs hiding in edge cases |
+| **Industry Precedent** | 15% | Is this the structure real exchanges / compressors / routers actually use for this exact problem |
+| **Determinism** | 15% | Worst-case behavior is predictable (critical for a latency-sensitive matching engine), not just good on average |
+
+**Weighted Score** = Σ(criterion score × weight). Final pick per subsystem is the highest weighted score **for this use case**, not the "best" data structure in the abstract.
+
+---
+
+## 1. Price Ladder — Order Book Price-Level Index
+
+**Access pattern:** insert/delete a price level, peek best bid/ask (min/max), occasionally walk depth outward from the best price. Prices are bounded, fixed-point values (ticks), not arbitrary reals.
+
+| Candidate | Op. Fit | Space | Feasibility | Precedent | Determinism | **Weighted** |
+| :--- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Unsorted Array | 1 | 4 | 5 | 1 | 2 | **2.40** |
+| Sorted Array (binary search) | 2 | 5 | 4 | 2 | 3 | **3.00** |
+| Unbalanced BST | 2 | 3 | 3 | 1 | 1 | **2.05** |
+| AVL Tree | 4 | 3 | 2 | 3 | 5 | **3.45** |
+| B+ Tree | 4 | 3 | 2 | 4 | 5 | **3.60** |
+| Skip List | 4 | 3 | 4 | 4 | 2 | **3.55** |
+| Direct-Indexed Flat Array (per tick) | 5 | 1 | 5 | 3 | 5 | **4.10** |
+| Red-Black Tree *(previous pick)* | 4 | 3 | 3 | 5 | 5 | **3.95** |
+| **Radix Tree, 16-ary nibble-bucketed on tick** *(final pick, revised)* | **5** | **3** | **4** | **2** | **5** | **4.05** |
+
+> **Correction note:** the scores above were re-derived from the stated rubric after an external review found the original weighted sums did not match the formula on roughly every row in this document, and that the original Radix Tree row (Space = 4, Precedent = 4) was not defensible. Both are revised below with the reasoning shown, not just the number.
+
+**Why the Radix Tree's own scores changed:**
+- **Space dropped 4 → 3.** The architecture doc originally specified a 256-ary node (one branch per *byte* of the tick), which costs `256 × 8 bytes ≈ 2 KB` per node on a 64-bit system — a real and significant memory cost per path, not a rounding error. The [Adaptive Radix Tree paper (Leis et al., ICDE 2013)](https://www.inf.ufpr.br/eduardo/ensino/ci809/papers/leis-icde2013.pdf) exists specifically because naive wide-fanout radix nodes waste space when most children are null, which is exactly our situation (most price ticks are unpopulated). We have **revised the design to a 16-ary (nibble) radix base** — see §1 of [02_system_architecture_and_design.md](./02_system_architecture_and_design.md) — which bounds each node to `16 × 8 bytes = 128 bytes`, a real mitigation, not a dismissal of the problem. It is still larger per-node than a Red-Black Tree's compact ~56-byte node, so Space = 3 (better than naive, not free).
+- **Precedent dropped 4 → 2.** We could not produce a citation of a real production order book using a radix tree specifically for price-level indexing — Redis and LevelDB's skip lists (cited elsewhere in this document) are *database* structures, not exchange order books, and do not establish precedent here. [Liquibook](https://github.com/enewhuis/liquibook/blob/master/README_ORDER_ENTRY.md) confirms the industry does represent prices as integer ticks, which supports the *key design*, but not specifically the radix-tree indexing structure built on top of it. We are keeping this score low rather than inventing a citation.
+- **Op. Fit stays 5, Determinism stays 5.** Fixed-depth digit decomposition is genuinely input-order-independent (no rotations, no rebalancing), and a populated-child **bitmap** per node (added to the struct in §1 of the architecture doc) makes best-bid/best-ask peek a fixed number of bitmap scans rather than a 256-way linear check. Walking *K* price levels of depth, however, is **O(K)** like any ordered structure — the fixed-depth property only applies to locating a *single* key, not to enumerating a range. The earlier version of this document did not make that distinction clearly.
+
+**Why the alternatives lost:**
+- **Arrays (sorted/unsorted):** O(N) shift cost on insert/delete at an arbitrary position makes both unsuitable regardless of how cheap a single lookup is.
+- **Direct-Indexed Flat Array:** scores highest of all on raw arithmetic (4.10) — true O(1) indexing, trivial to implement, fully deterministic. Its Space = 1 reflects a real failure mode, not a cosmetic penalty: a single wide-range instrument (e.g. a BTC/USD book spanning $1–$150,000 at cent resolution is 15 million ticks) forces an array sized to that full range even though only a few hundred price levels are ever populated at once. This is discussed further in the verdict below.
+- **Unbalanced BST:** degenerates toward O(P) under sorted or monotonic order arrival. We keep the general claim that this is a real worst case; we no longer assert a specific claim about how often real markets trend, since we have no data to back that frequency claim.
+- **AVL Tree:** stricter rebalancing than Red-Black means more rotations per structural mutation. (Note: the tree only mutates when a price level is *created* or *emptied* — an order joining an already-populated level only touches that level's order queue, not the tree. We overstated this in an earlier version of this document.)
+- **B+ Tree:** traditionally associated with disk-block amortization, but cache-optimized in-memory B+-tree variants are an active, legitimate research area (see e.g. [DAMON 2023 work on cache-optimized in-memory indexes](https://dbis.cs.tu-dortmund.de/storages/dbis-cs/r/papers/2023/cache-optimization/cache-optimization-damon-2023-submission.pdf)), so we no longer claim it's "only" a disk structure. It still isn't chosen here because its extra fan-out/key-count bookkeeping solves a cache-line-amortization problem we don't have at this project's scale, when a simpler fixed-width digit decomposition already gives us comparison-free routing.
+- **Red-Black Tree:** still a fully legitimate, industry-proven answer — O(log P) worst-case, no amortization tricks, and (now, at 3.95) numerically close enough to the Radix Tree (4.05) that this is a narrow call, not a dominant win.
+
+**Verdict — a closer call than originally presented.** Once corrected, Radix Tree (4.05), Direct-Indexed Array (4.10), and Red-Black Tree (3.95) are within rubric noise of each other. We are overriding the raw 0.05 numeric edge that Direct-Indexed Array holds, for a reason the single Space score can't capture on its own: Direct-Indexed Array's O(1) guarantee depends entirely on the tick range staying small, and it degrades catastrophically (megabytes → gigabytes) rather than gracefully if one instrument is configured with a wide range, whereas the Radix Tree's memory scales with the number of *active* price levels (empty branches are pruned), regardless of how wide the tick range is. For a multi-instrument exchange where tick ranges vary by orders of magnitude between pairs, that worst-case robustness is worth more to us than a statistically-insignificant scoring edge. **We retain Radix Tree as our design, but we are explicitly presenting it as the stronger engineering trade-off for a multi-instrument book, not as a structure that strictly dominates Red-Black Tree or Direct-Indexed Array on the numbers alone — and we have not yet benchmarked any of the three.** A single-instrument system with a known, narrow tick range would be better served by the Direct-Indexed Array.
+
+---
+
+## 2. Order Queue Per Price Level (FIFO Execution + Arbitrary Cancellation)
+
+**Access pattern:** append to tail (new order), pop from head (execute), delete an arbitrary order by ID (cancel) — all with no scanning allowed.
+
+| Candidate | Op. Fit | Space | Feasibility | Precedent | Determinism | **Weighted** |
+| :--- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Array / Dynamic Array | 2 | 4 | 5 | 1 | 2 | **2.75** |
+| Singly Linked List | 2 | 4 | 4 | 1 | 4 | **2.85** |
+| Doubly Linked List (no index) | 4 | 4 | 5 | 3 | 5 | **4.20** |
+| Balanced Tree keyed by orderId | 3 | 3 | 2 | 2 | 5 | **2.95** |
+| **Doubly Linked List + Hash Map** *(unchanged final pick)* | **5** | **4** | **4** | **5** | **5** | **4.65** |
+
+**Why the alternatives lost:** arrays require shifting elements on arbitrary-position delete (O(N)); a plain DLL without an index map requires an O(N) scan to *find* the node before you can unlink it in O(1) — the unlink is cheap, but locating it isn't; a balanced tree keyed by orderId gives O(log N) everywhere, strictly worse than O(1) for no benefit since we never need orders sorted by ID.
+
+**Winner: Doubly Linked List + Hash Map (unchanged).** This is the one subsystem where no alternative even comes close — the combination is the textbook-optimal answer (it's literally how LRU caches and real matching engines solve this), so we did not change it.
+
+---
+
+## 3. Currency Loophole Detection (Negative Cycle in a Weighted Directed Graph)
+
+**Access pattern:** given ~10–50 currency vertices and a near-complete edge set (every pair quotes a rate), find whether a negative-weight cycle exists and reconstruct it, on every rate update.
+
+| Candidate | Op. Fit | Space | Feasibility | Precedent | Determinism | **Weighted** |
+| :--- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Dijkstra (any variant) | 1 | 4 | 5 | 1 | 5 | **2.85** |
+| Floyd-Warshall | 3 | 2 | 4 | 3 | 5 | **3.35** |
+| Tarjan's SCC + per-cycle weight sum | 2 | 3 | 2 | 2 | 4 | **2.45** |
+| Johnson's Algorithm | 3 | 3 | 2 | 3 | 5 | **3.10** |
+| SPFA (queue-optimized Bellman-Ford) | 5 | 4 | 4 | 4 | 4 | **4.35** |
+| **Bellman-Ford** *(final pick)* | **5** | **4** | **5** | **5** | **5** | **4.85** |
+
+**Why the alternatives lost:**
+- **Dijkstra:** mathematically disqualified, not just suboptimal — it assumes non-negative edge weights, and our entire detection trick (`w = -ln(R)`) *depends on* negative weights existing. Cannot be used at all.
+- **Floyd-Warshall:** correctly finds negative cycles (checking the diagonal after all-pairs relaxation) and is simple to implement, but runs in O(V³) — for a near-complete graph where E ≈ V², that's effectively worse than Bellman-Ford's O(V·E) for our density. It's the right answer only when you need *all-pairs* shortest paths simultaneously, which we don't.
+- **Tarjan's SCC:** finds that a cycle exists structurally, but doesn't natively carry edge weights through the detection — we'd need a separate weighted-cycle-sum pass per candidate cycle on top of it, adding complexity for no complexity-class benefit.
+- **Johnson's Algorithm:** essentially "Bellman-Ford once, then Dijkstra from every vertex" to get all-pairs shortest paths efficiently on sparse graphs — built for a problem (all-pairs) we don't have, since we only need to know *whether a cycle exists*, from any vertex.
+- **SPFA:** a legitimate, widely-used competitive-programming optimization — identical worst-case O(V·E) bound and the same underlying correctness proof as Bellman-Ford, since it's Bellman-Ford with an early-exit queue. Its appeal is that it typically does far fewer relaxations on average, because only vertices whose distance just improved get re-queued. We scored it lower on three criteria that matter more for *this* system than raw average-case speed: **Feasibility** (correct queue/visit-count bookkeeping and re-entry tracking is more edge-case-prone to implement and test than a flat double loop), **Precedent** (Bellman-Ford is the overwhelmingly standard reference in arbitrage-detection literature; SPFA is mostly a competitive-programming heuristic, and is even known in that community to degrade to Bellman-Ford's worst case — with *worse* constant-factor overhead from queue operations — on specifically constructed adversarial graphs), and **Determinism** (Bellman-Ford's runtime is input-order-independent and fixed at exactly $|V|-1$ passes; SPFA's runtime varies with queue dynamics, which is the wrong trade for a system whose selling point is predictable latency).
+
+**Winner: Bellman-Ford.** On a graph this small (10–50 currencies), the absolute time difference between the two is negligible — both complete in microseconds — so SPFA's average-case speed advantage buys us nothing material, while Bellman-Ford's fixed iteration count, simpler implementation, and textbook-standard status directly serve this project's goals: provable correctness, deterministic latency, and alignment with how arbitrage detection is actually taught and cited. This is the one subsystem in this survey where the theoretically "newer" optimization does not win once implementation risk and determinism are weighted honestly.
+
+---
+
+## 4. Active Trader / Margin Account Cache
+
+**Access pattern:** point lookup and update by `traderId` on every order submission — no range queries, no "give me accounts between X and Y" requirement. A small number of high-frequency accounts dominate traffic (Zipfian access).
+
+| Candidate | Op. Fit | Space | Feasibility | Precedent | Determinism | **Weighted** |
+| :--- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Unsorted Array / Linked List | 1 | 4 | 5 | 1 | 2 | **2.40** |
+| AVL / Red-Black Tree keyed by traderId | 3 | 3 | 2 | 3 | 5 | **3.10** |
+| Splay Tree *(previous pick)* | 4 | 3 | 2 | 3 | 2 | **3.00** |
+| Plain Hash Map (no eviction) | 4 | 2 | 5 | 4 | 4 | **3.90** |
+| **Hash Map + LRU Cache** *(final pick)* | **5** | **4** | **4** | **5** | **5** | **4.65** |
+
+**Why the alternatives lost:**
+- **Trees (AVL/Red-Black) keyed by traderId:** give O(log N), strictly worse than hashing's O(1) average, and we never need accounts in sorted traderId order — paying for ordering we don't use.
+- **Splay Tree:** genuinely clever for skewed access (the exact Zipfian pattern we have), and it's a legitimate textbook answer here — but it only optimizes *average* access via amortization; a single cold lookup can still walk O(N) and perform a full rotation chain, which is worse determinism than a hash map's flat O(1) average, and it has no notion of bounded memory (it never evicts, so the cache grows forever as new traders appear).
+- **Plain Hash Map:** matches our access pattern perfectly (O(1) average) but has no eviction policy, so memory grows unboundedly as the trader population grows over a trading session — a real operational problem, not just a theoretical one.
+
+**Winner: Hash Map + LRU Cache.** The access pattern is pure point-lookup, which hashing already solves optimally; the only gap a plain hash map has — unbounded memory growth — is exactly what the LRU eviction list closes, at O(1) additional cost per access. This beats the Splay Tree specifically *because* our requirement is "bounded hot-cache," not "self-organizing sorted structure" — we don't need the ordering property a tree gives us, so paying its rotation cost is pure waste here.
+
+---
+
+## 5. Currency Ticker / Pair Lookup & Autocomplete
+
+**Access pattern:** validate a ticker exists (`USD/EUR`), and autocomplete partial input (`US` → `USD/EUR`, `USD/JPY`, ...) over a tiny, fixed alphabet (`A`–`Z`, `/`) and a small dataset (tens to low hundreds of pairs).
+
+| Candidate | Op. Fit | Space | Feasibility | Precedent | Determinism | **Weighted** |
+| :--- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Hash Set (exact match only) | 2 | 5 | 5 | 3 | 5 | **3.65** |
+| Sorted Array + Binary Search + range scan | 3 | 5 | 4 | 2 | 5 | **3.65** |
+| Ternary Search Tree | 4 | 4 | 3 | 3 | 4 | **3.65** |
+| Suffix Tree / DAWG | 4 | 2 | 1 | 2 | 4 | **2.80** |
+| **Trie (Prefix Tree)** *(unchanged final pick)* | **5** | **3** | **5** | **5** | **5** | **4.70** |
+
+**Why the alternatives lost:** a Hash Set gives O(1) exact match but *cannot* do prefix queries at all — autocomplete is simply impossible with it. Sorted array + binary search can locate a prefix range but still needs an O(K) scan to collect matches and O(log N) insert-shift on updates. A Ternary Search Tree is the strongest real competitor — better memory than a fixed-array Trie when the alphabet is large/sparse — but our alphabet is tiny and fixed (27 symbols), so a Trie's direct array-indexed child access (O(1) per level) beats a TST's O(log σ) comparison per level; TST's memory advantage doesn't apply when σ is already small. Suffix trees/DAWGs are built for whole-corpus substring search over large text — massive overkill and implementation risk for a dataset of a few hundred short, fixed-format strings.
+
+> **Rubric limitation worth flagging:** Hash Set, Sorted Array, and Ternary Search Tree all land on the exact same weighted score (3.65) despite being qualitatively very different — Hash Set *cannot perform the required operation at all* (no prefix query support), yet its strength on unrelated criteria (Space, Feasibility, Determinism) pulls its weighted average up to match candidates that can actually do the job. This is a general weakness of additive weighted-sum rubrics: a hard disqualifying constraint can be mathematically outweighed by unrelated strengths. We are not re-scoring Hash Set to fix this — we are flagging it, because pretending the rubric alone adjudicates this case would be another overclaim. Hash Set is disqualified by capability, not by score.
+
+**Winner: Trie (unchanged).** For a tiny fixed alphabet and a prefix-query requirement, nothing beats direct character-indexed branching — it's the textbook-correct structure for exactly this problem, so we kept it.
+
+---
+
+## 6. Trade Telemetry Log Compression
+
+**Access pattern:** batch-compress completed trade log text for archival storage; decompression correctness matters more than squeezing out the last few percent of ratio, and the implementation must be provably correct from scratch.
+
+| Candidate | Op. Fit | Space (ratio) | Feasibility | Precedent | Determinism | **Weighted** |
+| :--- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Run-Length Encoding (RLE) | 1 | 1 | 5 | 2 | 5 | **2.55** |
+| LZ77 / LZ78 / LZW | 4 | 4 | 2 | 4 | 4 | **3.60** |
+| Arithmetic / Range Coding | 4 | 5 | 1 | 4 | 3 | **3.40** |
+| Asymmetric Numeral Systems (ANS) | 5 | 5 | 1 | 5 | 3 | **3.90** |
+| BWT + MTF + RLE (bzip2-style) | 4 | 5 | 1 | 3 | 3 | **3.25** |
+| **Huffman Coding** *(unchanged final pick)* | **4** | **4** | **5** | **4** | **5** | **4.35** |
+
+**Why the alternatives lost:** RLE only helps on long repeated runs, which trade logs (varied JSON-like fields) don't reliably have. LZ-family, arithmetic coding, ANS, and BWT-based schemes (the actual state of the art — ANS is what powers zstd and LZFSE today) all compress *better* than Huffman in principle, because Huffman is constrained to integer-bit-length codes while arithmetic/ANS can assign fractional bits — but every one of them is substantially harder to implement correctly from scratch within a semester (adaptive models, carry propagation, state-table construction), and a single subtle bug silently corrupts archived trade records, which is an unacceptable risk for financial audit logs.
+
+**Winner: Huffman Coding (unchanged).** It is provably optimal *within the constraint of integer-length prefix codes* (proven via the exchange argument), its min-heap-based tree construction is simple enough to implement and test exhaustively, and it is the structure explicitly named in the course's Text Processing unit — the rare case where "good enough and provably correct" beats "best possible but fragile."
+
+---
+
+## Final Summary
+
+| Subsystem | Chosen | Strongest Rejected Alternative | Deciding Factor |
+| :--- | :--- | :--- | :--- |
+| Price Ladder | **Radix Tree** (16-ary, revised) | Direct-Indexed Array (4.10, numerically highest) | Overridden on robustness grounds, not a numeric win — see §1 verdict. Memory scales with active price levels, not tick-range magnitude |
+| Order Queue + Cancel | **DLL + Hash Map** | Plain DLL (4.20) | Needed O(1) *lookup* before O(1) unlink — the Hash Map supplies exactly that |
+| Arbitrage Detection | **Bellman-Ford** | SPFA (4.35) | Fixed, input-order-independent iteration count and simpler implementation beat SPFA's average-case speed, which is immaterial at this graph size (10–50 vertices) |
+| Account Cache | **Hash Map + LRU** | Plain Hash Map (3.90) | Point-lookup workload doesn't need a tree's ordering; LRU closes the one real gap (unbounded memory) a plain hash map has |
+| Ticker Lookup | **Trie** | 3-way tie: Hash Set / Sorted Array / Ternary Search Tree (3.65 each) | Only the Trie and TST can perform prefix queries at all; Trie wins on alphabet size (see rubric-limitation note in §5) |
+| Log Compression | **Huffman Coding** | ANS (3.90) | Provably correct and simple to implement from scratch; ANS's ratio gain isn't worth the implementation risk for audit-critical logs |
+
+**Overall conclusion:** this document was corrected after an external review found that most of its original weighted-sum arithmetic did not match its own stated formula, and that the original Price Ladder scoring overstated the Radix Tree's memory efficiency and industry precedent. With the numbers fixed, four of six subsystems are decisive wins (Order Queue, Arbitrage Detection, Account Cache, Log Compression), one has a genuine three-way statistical tie resolved by a hard capability requirement (Ticker Lookup), and one — Price Ladder — is a close engineering judgment call that we are presenting honestly as such rather than as a proven win: Radix Tree, Direct-Indexed Array, and Red-Black Tree all land within 0.15 of each other (3.95–4.10) once memory and precedent are scored honestly. None of the six verdicts in this document should be read as final without implementation and benchmarking — this is a design-stage comparison, not a measured result.
