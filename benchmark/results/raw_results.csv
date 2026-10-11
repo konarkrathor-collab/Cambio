@@ -87,3 +87,28 @@ ticker,hash-set,300000,42,7,na,0,0,0,0,0,-1,mode=prefix prefixSearch structurall
 ticker,sorted-array,300000,42,7,ok,16.728,17.017,17.589,17629387,3.36,0.0,mode=prefix
 ticker,tst,300000,42,7,ok,16.121,16.390,17.775,18303983,8.45,0.0,mode=prefix
 ticker,trie,300000,42,7,ok,10.523,10.627,11.245,28229537,5.81,0.2,mode=prefix
+ticker,oracle-linearScan,300000,42,7,ok,39.992,42.356,42.440,7082829,0.20,0.0,mode=exact
+ticker,hash-set,300000,42,7,ok,2.716,2.880,3.415,104174190,18.58,0.0,mode=exact
+ticker,sorted-array,300000,42,7,ok,10.990,11.082,11.150,27070315,0.61,0.0,mode=exact
+ticker,tst,300000,42,7,ok,8.481,8.531,8.750,35165524,2.57,0.0,mode=exact
+ticker,trie,300000,42,7,ok,2.990,2.997,3.100,100115400,3.44,0.2,mode=exact
+ticker,oracle-linearScan,300000,42,7,ok,60.722,60.915,61.018,4924919,0.17,0.0,mode=prefix
+ticker,hash-set,300000,42,7,na,0,0,0,0,0,-1,mode=prefix prefixSearch structurally unsupported
+ticker,sorted-array,300000,42,7,ok,16.159,16.247,16.702,18464995,2.80,0.0,mode=prefix
+ticker,tst,300000,42,7,ok,16.651,16.726,16.903,17936371,1.06,0.0,mode=prefix
+ticker,trie,300000,42,7,ok,10.437,10.501,10.571,28569162,0.67,0.2,mode=prefix
+compression,rle,5505087,42,7,ok,5.910,6.152,6.612,894905750,7.48,4.0,phase=encode bytes/sec ratio=1.0240054335199427
+compression,rle,5505087,42,7,ok,3.511,3.581,3.645,1537501026,1.81,-1.0,phase=decode bytes/sec
+compression,lzw,5505087,42,7,FAIL,0,0,0,0,0,-1,round-trip length mismatch on batch 0: 1 vs 262177
+compression,huffman,5505087,42,7,ok,29.456,29.646,30.313,185695919,2.25,2.1,phase=encode bytes/sec ratio=0.5874125150065749
+compression,huffman,5505087,42,7,ok,31.215,31.752,32.279,173377192,1.66,-1.0,phase=decode bytes/sec
+compression,arithmetic,5505087,42,7,ok,151.199,151.906,152.797,36240139,0.59,1.6,phase=encode bytes/sec ratio=0.5841551641236551
+compression,arithmetic,5505087,42,7,ok,215.895,216.145,217.769,25469451,0.75,-1.0,phase=decode bytes/sec
+compression,rle,5505087,42,7,ok,6.058,6.179,6.585,890886785,6.56,4.0,phase=encode bytes/sec ratio=1.0240054335199427
+compression,rle,5505087,42,7,ok,3.513,3.560,3.752,1546589971,5.41,-1.0,phase=decode bytes/sec
+compression,lzw,5505087,42,7,ok,46.075,49.877,50.188,110373349,0.62,0.8,phase=encode bytes/sec ratio=0.2961842383235724
+compression,lzw,5505087,42,7,ok,20.278,20.489,21.215,268686090,3.54,-1.0,phase=decode bytes/sec
+compression,huffman,5505087,42,7,ok,29.353,29.544,31.234,186333618,5.72,2.1,phase=encode bytes/sec ratio=0.5874125150065749
+compression,huffman,5505087,42,7,ok,30.771,30.991,31.251,177634547,0.84,-1.0,phase=decode bytes/sec
+compression,arithmetic,5505087,42,7,ok,152.142,152.330,152.534,36139296,0.13,1.6,phase=encode bytes/sec ratio=0.5841551641236551
+compression,arithmetic,5505087,42,7,ok,211.762,212.180,212.607,25945347,0.20,-1.0,phase=decode bytes/sec

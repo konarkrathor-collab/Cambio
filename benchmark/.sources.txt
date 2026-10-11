@@ -39,6 +39,17 @@ src/ads/bench/ticker/TickerOps.java
 src/ads/bench/ticker/SortedArrayTicker.java
 src/ads/bench/ticker/TickerBench.java
 src/ads/bench/Main.java
+src/ads/bench/compression/ByteBuf.java
+src/ads/bench/compression/CompressorOps.java
+src/ads/bench/compression/HuffmanCompressor.java
+src/ads/bench/compression/CompressionBench.java
+src/ads/bench/compression/LogWorkload.java
+src/ads/bench/compression/RleCompressor.java
+src/ads/bench/compression/ArithmeticCompressor.java
+src/ads/bench/compression/LzwCompressor.java
+src/ads/bench/compression/BitIn.java
+src/ads/bench/compression/CompressionResult.java
+src/ads/bench/compression/BitOut.java
 src/ads/bench/queue/TreeQueueOps.java
 src/ads/bench/queue/QueueBench.java
 src/ads/bench/queue/ArrayQueueOps.java

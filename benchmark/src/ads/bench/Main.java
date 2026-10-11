@@ -42,6 +42,13 @@ import ads.bench.ticker.TickerBench;
 import ads.bench.ticker.TickerWorkload;
 import ads.bench.ticker.TrieTicker;
 import ads.bench.ticker.TstTicker;
+import ads.bench.compression.ArithmeticCompressor;
+import ads.bench.compression.CompressionBench;
+import ads.bench.compression.CompressionResult;
+import ads.bench.compression.HuffmanCompressor;
+import ads.bench.compression.LogWorkload;
+import ads.bench.compression.LzwCompressor;
+import ads.bench.compression.RleCompressor;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -67,6 +74,8 @@ public final class Main {
         + " [--universe U] [--capacity C] [--zipf S] [--out FILE]");
     System.out.println("   or: run.sh ticker [--n N] [--seed S] [--reps R] [--warmup W]"
         + " [--out FILE]");
+    System.out.println("   or: run.sh compression [--seed S] [--reps R] [--warmup W]"
+        + " [--out FILE]");
   }
 
   public static void main(String[] args) throws IOException {
@@ -88,6 +97,10 @@ public final class Main {
     }
     if (args[0].equals("ticker")) {
       runTicker(args);
+      return;
+    }
+    if (args[0].equals("compression")) {
+      runCompression(args);
       return;
     }
     if (!args[0].equals("ladder")) {
@@ -623,6 +636,100 @@ public final class Main {
         ? "RESULT: FAILURES PRESENT (a structure disagreed with the oracle)"
         : "RESULT: all candidates validated against the oracle and timed OK"
             + " (hash-set N/A on phase 2 is structural incapability, not a failure)");
+    if (anyFailed) {
+      System.exit(1);
+    }
+  }
+
+  /** Compression bench: ./run.sh compression [--seed S] [--reps R] [--warmup W] [--out FILE] */
+  private static void runCompression(String[] args) throws IOException {
+    long seed = 42;
+    int reps = 7;
+    int warmup = 3;
+    String outPath = "results/raw_results.csv";
+    for (int i = 1; i + 1 < args.length; i += 2) {
+      String k = args[i];
+      String v = args[i + 1];
+      switch (k) {
+        case "--seed": seed = Long.parseLong(v); break;
+        case "--reps": reps = Integer.parseInt(v); break;
+        case "--warmup": warmup = Integer.parseInt(v); break;
+        case "--out": outPath = v; break;
+        default:
+          usage();
+          System.exit(2);
+      }
+    }
+
+    LogWorkload w = LogWorkload.generate(seed);
+    System.out.println("workload: " + w.describe());
+    System.out.println("gate: round-trip identity decode(encode(x)) == x, byte-for-byte, per batch");
+    System.out.println();
+
+    AllocCounter alloc = new AllocCounter();
+    System.out.println("alloc counter: " + (alloc.isEnabled() ? "enabled" : "UNAVAILABLE"));
+    System.out.println();
+    System.out.println(CompressionResult.header());
+
+    Map<String, CompressionBench.Factory> candidates = new LinkedHashMap<>();
+    candidates.put("rle", RleCompressor::new);
+    candidates.put("lzw", LzwCompressor::new);
+    candidates.put("huffman", HuffmanCompressor::new);
+    candidates.put("arithmetic", ArithmeticCompressor::new);
+
+    boolean anyFailed = false;
+    Path out = Paths.get(outPath);
+    if (out.getParent() != null) {
+      Files.createDirectories(out.getParent());
+    }
+    boolean needHeader = !Files.exists(out) || Files.size(out) == 0;
+
+    try (BufferedWriter csv = Files.newBufferedWriter(out, StandardCharsets.UTF_8,
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+      if (needHeader) {
+        csv.write(BenchResult.csvHeader());
+        csv.newLine();
+      }
+      for (Map.Entry<String, CompressionBench.Factory> e : candidates.entrySet()) {
+        String name = e.getKey();
+        String problem = null;
+        try {
+          problem = CompressionBench.verify(e.getValue().create(), w);
+        } catch (RuntimeException ex) {
+          problem = "threw " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
+        }
+        if (problem != null) {
+          anyFailed = true;
+          CompressionResult r = CompressionResult.failed(name, w.totalInputBytes, problem);
+          System.out.println(r.row());
+          csv.write("compression," + name + "," + w.totalInputBytes + "," + seed + "," + reps
+              + ",FAIL,0,0,0,0,0,-1," + problem.replace(',', ';'));
+          csv.newLine();
+          continue;
+        }
+        CompressionResult r = CompressionBench.timed(name, e.getValue(), w, warmup, reps, alloc);
+        System.out.println(r.row());
+        // The raw CSV keeps its single schema via two adapter rows per candidate
+        // (n = input bytes; ops/sec column = bytes/sec — documented repurposing, as in
+        // the arbitrage and ticker benches). The console uses CompressionResult instead,
+        // because folding ratio + two-phase timings into BenchResult would mislead.
+        BenchResult encRow = new BenchResult("compression", name, (int) w.totalInputBytes,
+            seed, reps, true, r.encodeMinMs, r.encodeMedianMs, r.encodeMaxMs,
+            r.allocPerInputByte, "phase=encode bytes/sec ratio=" + r.ratio);
+        BenchResult decRow = new BenchResult("compression", name, (int) w.totalInputBytes,
+            seed, reps, true, r.decodeMinMs, r.decodeMedianMs, r.decodeMaxMs, -1.0,
+            "phase=decode bytes/sec");
+        csv.write(encRow.csv());
+        csv.newLine();
+        csv.write(decRow.csv());
+        csv.newLine();
+      }
+    }
+
+    System.out.println();
+    System.out.println(anyFailed
+        ? "RESULT: FAILURES PRESENT (a round-trip identity check failed)"
+        : "RESULT: all candidates round-tripped byte-for-byte and were timed OK");
     if (anyFailed) {
       System.exit(1);
     }

@@ -53,7 +53,7 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 - [x] Queue (array, singly list, DLL, tree-by-id, DLL+hash) — see Run 6
 - [x] Cache (hash chaining, open addressing, hash+LRU, splay; Zipfian stream) — see Run 7
 - [x] Ticker (hash set, sorted array, TST, trie; two-phase exact/prefix workload) — see Run 8
-- [ ] Then: compression bench
+- [x] Compression (RLE, LZW, Huffman, order-0 arithmetic; round-trip gate) — see Run 9
 - [ ] Deeper-book adversarial queue run (array O(n)-shift divergence at realistic depth)
 
 ---
@@ -270,4 +270,28 @@ the bugs documented in Run 4, kept as an honest record rather than scrubbed).
 2. **A performance artifact, corrected for fairness**: the trie's first version scanned all 27 child slots per subtree node during autocomplete and lost to the sorted array/TST (34.09 vs ~16.5 ms). Replacing the scan with a **child bitmap** — the same technique the architecture doc specifies for the radix tree's nodes — brought it to 10.63 ms (**3.2×**). Terminal nodes also now store the original string reference (zero-allocation results) — matching what the sorted array gets for free — so the comparison stays structural rather than about result materialization (reconstruction had cost the trie 116.5 B/op of churn in the first run).
 
 **Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; one seeded session (load order is a seeded shuffle; TST shape depends on it — not balanced). Everything is at a 132-pair scale; the trie's lead is expected to grow with universe size (fixed-depth walk vs O(log n) compares), but that projection is untested here. Raw rows appended to `results/raw_results.csv` — including the buggy-run and pre-bitmap rows as the honest record.
+
+## Run 9 — Trade-log compression: round-trip-gated ratio/speed bake-off
+
+**Command:** `./run.sh compression --seed 42 --reps 7 --warmup 3`
+**Data:** synthetic trade-log text in three batches (256 KB + 1 MB + 4 MB = 5,505,087 bytes, 84,524 lines) — structured, pipe-delimited rows with repetitive fields (pairs, traders, lot sizes, incrementing ORD- ids) and varying content (timestamps, random-walk prices). **Correctness gate = round-trip identity** `decode(encode(x)) == x`, byte-for-byte, per batch — no oracle, exactly the property audit archives need. Ratio = encodedBytes/inputBytes, aggregate across batches; CSV holds two adapter rows per candidate (`phase=encode` / `phase=decode`).
+
+| structure | ratio | enc ms | dec ms | enc MB/s | dec MB/s | alloc/in |
+|:---|--:|--:|--:|--:|--:|--:|
+| rle (PackBits) | 1.0240 | 6.18 | 3.56 | 890.9 | 1546.6 | 4.02 |
+| **lzw** | **0.2962** | 49.88 | 20.49 | 110.4 | 268.7 | 0.80 |
+| huffman (the pick) | 0.5874 | 29.54 | 30.99 | 186.3 | 177.6 | 2.09 |
+| arithmetic (order-0) | 0.5842 | 152.33 | 212.18 | 36.1 | 25.9 | 1.59 |
+
+**Findings vs doc 05 §6 claims:**
+
+1. **LZW's ratio win is far bigger than the rubric implied.** At 0.296 (3.4:1) LZW beats Huffman by ~2× on this data — repetitive telemetry structure is exactly where dictionary coding shines. §6 conceded LZ-family "compress better in principle"; measured, this is a substantial practical gap, recorded honestly as the strongest counterweight to the pick.
+2. **…and LZW is also the candidate that broke — first-hand confirmation of §6's risk argument.** The first version of the from-scratch LZW silently emitted one code for an entire 256 KB batch (a dictionary-lookup initialization bug: empty slots read as a "hit" on entry 0; decoded length 1 of 262,177; FAIL row retained in the raw CSV). The round-trip gate caught it before any ratio number was published. That is *"a single subtle bug silently corrupts archived trade records"* happening in miniature. Huffman, by contrast, round-tripped byte-perfect on its very first run — the doc's "trivial to get correct" claim, demonstrated.
+3. **The "fractional bits" advantage of arithmetic coding is real but tiny at order-0:** 0.5842 vs Huffman's 0.5874 (−0.5% relative) at **5× the encode time and 7× the decode time**. This supports §6's actual calculus: the simple arithmetic coder buys ~nothing; the models that make arithmetic/ANS gains large (adaptive/context mixing) are precisely the ones §6 called too risky for a semester.
+4. **RLE expands by 2.4%** (ratio 1.0240) — log text has almost no runs; it is the honest floor.
+5. **Speed hierarchy:** RLE ≫ Huffman > LZW > arithmetic on encode; LZW's decode (268.7 MB/s) outruns its encode (hash lookups); Huffman runs ~180 MB/s both ways; allocation per input byte is lowest for LZW (0.80) and highest for RLE (4.02, output-buffer growth).
+
+**Verdict, honestly stated:** the pick stands (byte-perfect first try + provable optimality within integer-length codes + curriculum alignment), but the trade's full shape is now measured — if storage cost ever outranked implementation safety for these logs, LZW's 2× smaller archives at ~1.7× the encode cost is the number to revisit, with its encoder/decoder synchronization risk as the price of admission.
+
+**Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; aggregates across three batch sizes (per-batch variation not separately reported); one seeded 5.5 MB session; ratio is for *this* data shape — real logs with a different field mix would shift the numbers (the generator is fully documented in `LogWorkload`).
 
