@@ -1,0 +1,65 @@
+# Backend bug log
+
+Every bug found while building the backend: what broke, why, and the fix (doc 08 §3 rule 10). Neither benchmark bug below is fixed in `benchmark/`, which is frozen (rule 11). Each is fixed in the production port and covered by a test.
+
+---
+
+## B1: Trie lookups crash on any character outside `A–Z` and `/` (Stage 0)
+
+**What broke.** The benchmark's `TrieTicker` maps a character to its child slot with `c == '/' ? 26 : c - 'A'` and indexes the 27-slot child array without checking the result. Any other character throws instead of answering "not found". Reproduced against the benchmark classes:
+
+```
+benchmark TrieTicker.contains("usd/eur") threw java.lang.ArrayIndexOutOfBoundsException: Index 52 out of bounds for length 27
+benchmark TrieTicker.contains("USD-EUR") threw java.lang.ArrayIndexOutOfBoundsException: Index -20 out of bounds for length 27
+benchmark TrieTicker.contains("US D") threw java.lang.ArrayIndexOutOfBoundsException: Index -33 out of bounds for length 27
+```
+
+**Why.** The benchmark contract (`TickerOps`) guarantees that every input uses only the 27-character alphabet, so the lab never needed a check. In production, the directory serves `GET /api/tickers?prefix=…` and validates the pair on order submission (Stage 3), so its input comes from users. A lowercase prefix typed into the dashboard would have become a 500 error.
+
+**Fix.** In `ads.directory.TickerTrie`, `slot()` returns -1 for a character outside the alphabet. `contains` and `prefixSearch` treat -1 as "no match", and `insert` rejects it with `IllegalArgumentException`. `prefixSearch` also stops when the caller's buffer is full rather than writing past it, so an API caller can ask for "the first N matches". Navigation is still one array index per character; parity with the benchmark's checksums is unchanged.
+
+**Tests.** `trie: characters outside A-Z and '/' do not crash lookups (B1)` and `trie: prefixSearch stops when the buffer is full` in `backend/test/ads/test/UnitTests.java`.
+
+---
+
+## B2: The Huffman decoder accepts truncated or corrupt archives (Stage 0)
+
+**What broke.** The benchmark's `HuffmanCompressor.decode` trusts its input. Its bit reader returns 0 bits past the end of the data, and the decoder never checks whether that happened, so a truncated archive decodes into wrong bytes with no error. A corrupted length field makes it allocate the claimed length up front. Reproduced against the benchmark classes on a 57-byte trade log that encodes to 287 bytes:
+
+```
+benchmark Huffman decode of 286/287 bytes: returned 57 bytes, identical to input=false, no exception
+benchmark Huffman decode of 260/287 bytes: returned 57 bytes, identical to input=false, no exception
+benchmark Huffman decode of 100/287 bytes: returned 57 bytes, identical to input=false, no exception
+(length field corrupted to ~2.1 billion, -Xmx256m)
+threw java.lang.OutOfMemoryError: Java heap space after 12 ms
+```
+
+**Why.** The benchmark only ever decodes what it has just encoded in memory. Its gate is `decode(encode(x)) == x`, which this bug cannot fail. The logbook (Stage 1) decodes archive files from disk, where a half-written file after a crash is a realistic input. Silently returning wrong trade records would defeat the reason the archive exists.
+
+**Fix.** In `ads.logbook.HuffmanCodec.decode` (the encoder is untouched, and the parity tests check its output stays byte-identical):
+
+- The 260-byte header must be present.
+- Every code length must be at most 62.
+- The lengths must satisfy the Kraft inequality, so they form a valid prefix code.
+- The recorded length cannot exceed the number of body bits, since every symbol costs at least one bit. This also bounds the output allocation.
+- `BitIn` records any read past the end, and a stream that needed such a read is rejected.
+
+Every failure throws `IllegalArgumentException`.
+
+**Tests.** `huffman: truncated streams are rejected, not decoded as padding (B2)` covers seven cut points, including mid-header and one byte short. `huffman: 20000 corrupted streams only ever fail with IllegalArgumentException` is a seeded fuzz of byte flips and truncations: no other exception type, and no out-of-memory error. Corruption inside the body can still decode to other valid symbols. Detecting that needs a checksum, which is a Stage 1 logbook decision, not a codec one.
+
+---
+
+## B3: A failed `backend/build.sh` left stale classes that `run.sh` then executed (Stage 0, own tooling)
+
+**What broke.** While writing Stage 0, a compile error (a `-Werror` lint warning) aborted `javac` after it had already written some class files into `out/classes/`. `run.sh` only checks that `out/classes` exists, so it ran the partial build and failed with `NoClassDefFoundError: ads/vault/LruCache`. That is misleading, because the real problem was the compile error.
+
+**Why.** `javac` writes output incrementally, and the script compiled straight into the directory `run.sh` trusts.
+
+**Fix.** `build.sh` compiles into `out/classes.tmp` and renames it to `out/classes` only after `javac` succeeds. A failed build leaves no `out/classes` behind, so `run.sh` rebuilds and shows the real error.
+
+---
+
+## Porting note (not a bug): cleared slots in the B+ tree leaves
+
+The benchmark ladder stores volumes in a primitive `long[]`, so stale slots past `n` are harmless. The production leaves hold `PriceLevel` references, and a stale slot would keep a removed level, and through its queue that level's orders, reachable. That would be a slow memory leak in a long-running engine. Every place the port shifts or moves leaf entries out of a slot clears that slot: leaf delete, leaf split, and both borrow paths. Merges drop the whole right node. This changes no observable behaviour, and the parity gates cannot see it either way.
