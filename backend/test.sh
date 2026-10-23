@@ -25,11 +25,11 @@ if grep -rn "java\.util" $structure_dirs; then
 else
   echo "PASS  no java.util in engine, scanner, vault, directory, logbook"
 fi
-if grep -rnwE "double|float|Double|Float" src/ads/engine; then
-  echo "FAIL  floating point in src/ads/engine (orders are priced and matched in integers)"
+if grep -rnwE "double|float|Double|Float" src/ads/engine src/ads/api/Prices.java; then
+  echo "FAIL  floating point in the engine or in price conversion"
   rules_failed=1
 else
-  echo "PASS  no double/float in src/ads/engine"
+  echo "PASS  no double/float in src/ads/engine or src/ads/api/Prices.java"
 fi
 # an order's remaining quantity may only be written by PriceLevel.fill (and set once by
 # the Order constructor)

@@ -313,4 +313,22 @@ public final class BPlusTreeLadder implements PriceLadder {
   public int size() {
     return count;
   }
+
+  /** Read-only shape of the tree for the inspector: height, node and leaf counts. */
+  public LadderShape describe() {
+    int height = 1;
+    for (Node x = root; !x.leaf(); x = x.children[0]) height++;
+    int[] counts = new int[2]; // internal nodes, leaves
+    countNodes(root, counts);
+    return new LadderShape(MAX, height, counts[0], counts[1], count);
+  }
+
+  private static void countNodes(Node x, int[] counts) {
+    if (x.leaf()) {
+      counts[1]++;
+      return;
+    }
+    counts[0]++;
+    for (int i = 0; i <= x.n; i++) countNodes(x.children[i], counts);
+  }
 }

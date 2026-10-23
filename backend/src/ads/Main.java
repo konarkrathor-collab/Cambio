@@ -1,9 +1,6 @@
 package ads;
 
-import ads.api.ApiServer;
-import ads.api.EngineThread;
-import ads.api.MarketService;
-import ads.directory.Directory;
+import ads.api.App;
 import ads.directory.TickerTrie;
 import ads.engine.BPlusTreeLadder;
 import ads.engine.Order;
@@ -20,7 +17,6 @@ import ads.vault.LruCache;
 import ads.vault.Vault;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,10 +34,12 @@ import java.util.concurrent.CountDownLatch;
  *   run.sh archive [DIR]         decode a Logbook archive and summarise it
  *                                (default data/logbook)
  *   run.sh structures            Stage 0 smoke run of the six structures
- *   run.sh serve [--port N] [--host H] [--min-profit PERCENT]
- *                                Stage 2 HTTP server (default 127.0.0.1:8080):
- *                                POST /api/market/rates, GET /api/market/rates/status;
- *                                the threshold also reads MIN_PROFIT_PERCENT
+ *   run.sh serve [--host H] [--port N] [--data-dir DIR] [--seed-demo-accounts]
+ *                [--min-profit PERCENT] [--port-file FILE]
+ *                                the API gateway (default 127.0.0.1:8080, data in data/;
+ *                                documentation/09_api_contract.md); the threshold also
+ *                                reads MIN_PROFIT_PERCENT; --port 0 picks a free port and
+ *                                --port-file records it
  *   run.sh threshold-study [FILE]
  *                                replay a capture offline and tabulate thresholds
  * </pre>
@@ -80,39 +78,45 @@ public final class Main {
 
   private static void usage() {
     System.err.println("usage: run.sh demo [--all-trades] | accounts [FILE] | archive [DIR]"
-        + " | structures | serve [--port N] [--host H] [--min-profit PERCENT]"
+        + " | structures | serve [--host H] [--port N] [--data-dir DIR] [--seed-demo-accounts]"
+        + " [--min-profit PERCENT] [--port-file FILE]"
         + " | threshold-study [FILE]");
     System.exit(2);
   }
 
-  /** Starts the HTTP server and blocks until the process is stopped. */
+  /** Starts the API gateway and blocks until the process is stopped. */
   private static void serve(String[] args) throws IOException {
-    String host = "127.0.0.1";
-    int port = 8080;
-    double minProfit = minProfitFromEnv();
+    App.Config config = new App.Config();
+    config.minProfitPercent = minProfitFromEnv();
+    Path portFile = null;
     for (int i = 1; i < args.length; i++) {
-      if (args[i].equals("--min-profit") && i + 1 < args.length) {
-        minProfit = parseMinProfit(args[++i], "--min-profit");
-      } else if (args[i].equals("--port") && i + 1 < args.length) {
-        port = Integer.parseInt(args[++i]);
-      } else if (args[i].equals("--host") && i + 1 < args.length) {
-        host = args[++i];
+      String a = args[i];
+      boolean hasValue = i + 1 < args.length;
+      if (a.equals("--min-profit") && hasValue) {
+        config.minProfitPercent = parseMinProfit(args[++i], "--min-profit");
+      } else if (a.equals("--port") && hasValue) {
+        config.port = Integer.parseInt(args[++i]);
+      } else if (a.equals("--host") && hasValue) {
+        config.host = args[++i];
+      } else if (a.equals("--data-dir") && hasValue) {
+        config.dataDir = Paths.get(args[++i]);
+      } else if (a.equals("--port-file") && hasValue) {
+        portFile = Paths.get(args[++i]);
+      } else if (a.equals("--seed-demo-accounts")) {
+        config.seedDemoAccounts = true;
       } else {
         usage();
       }
     }
-    EngineThread engine = new EngineThread();
-    MarketService market = new MarketService(new ArbitrageScanner(new Directory(), minProfit),
-        engine, System::currentTimeMillis);
-    ApiServer server = new ApiServer(new InetSocketAddress(host, port));
-    ApiServer.marketRoutes(server, engine, market);
-    server.start();
-    System.out.println("listening on http://" + host + ":" + server.port()
-        + "  (POST /api/market/rates, GET /api/market/rates/status)");
+    App app = App.start(config);
+    if (portFile != null) {
+      Files.writeString(portFile, app.port() + "\n");
+    }
+    System.out.println("listening on http://" + config.host + ":" + app.port() + "  (data "
+        + config.dataDir + ", min profit " + config.minProfitPercent + "%)");
     CountDownLatch stopped = new CountDownLatch(1);
     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-      server.stop();
-      engine.shutdown();
+      app.stop();
       stopped.countDown();
     }));
     try {

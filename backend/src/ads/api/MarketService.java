@@ -43,6 +43,8 @@ public final class MarketService {
   public static final long FEED_SILENT_MS = 15_000;
   /** A fallback snapshot counts as current for two of the feed's hourly polls. */
   public static final long FALLBACK_VALID_MS = 2 * 3_600_000;
+  /** Minimum gap between two RATE_TICK events for the same pair. */
+  public static final long RATE_TICK_MIN_GAP_MS = 250;
   /** How often expired quotes are checked for (a re-scan runs only if one expired). */
   public static final long SWEEP_MS = 1_000;
   private static final int MAX_ERRORS_REPORTED = 5;
@@ -51,6 +53,8 @@ public final class MarketService {
   private final ArbitrageScanner scanner;
   private final Scheduler scheduler;
   private final LongSupplier clock;
+  private final EventSink events;
+  private final Map<String, Long> lastRateTickEvent = new LinkedHashMap<>(); // pair -> ms
 
   private final Map<String, Long> quoteValidUntil = new LinkedHashMap<>(); // pair -> ms
   private String ratesSource; // the source of every rate currently in the store
@@ -71,9 +75,15 @@ public final class MarketService {
   private ScanResult lastScan;
 
   public MarketService(ArbitrageScanner scanner, Scheduler scheduler, LongSupplier clock) {
+    this(scanner, scheduler, clock, EventSink.NONE);
+  }
+
+  public MarketService(ArbitrageScanner scanner, Scheduler scheduler, LongSupplier clock,
+      EventSink events) {
     this.scanner = scanner;
     this.scheduler = scheduler;
     this.clock = clock;
+    this.events = events;
     scheduler.schedule(this::sweep, SWEEP_MS);
   }
 
@@ -139,6 +149,7 @@ public final class MarketService {
       String pair = (String) q[0];
       scanner.onTick(pair, (Double) q[1], now + validFor);
       touch(pair, now + validFor);
+      rateTickEvent(pair, (Double) q[1], (Long) q[2], (String) source, now);
       if (q[2] != null) {
         lastTickReceivedAt = now;
         lastTickTs = Math.max(lastTickTs, (Long) q[2]);
@@ -176,6 +187,19 @@ public final class MarketService {
     if (pair == null || !knownPair(pair)) return sym + ": unknown symbol";
     out.add(new Object[] { pair, price, ts });
     return null;
+  }
+
+  /** RATE_TICK, at most one per pair per {@link #RATE_TICK_MIN_GAP_MS} (4 per second). */
+  private void rateTickEvent(String pair, double rate, Long ts, String source, long now) {
+    Long last = lastRateTickEvent.get(pair);
+    if (last != null && now - last < RATE_TICK_MIN_GAP_MS) return;
+    lastRateTickEvent.put(pair, now);
+    Map<String, Object> e = new LinkedHashMap<>();
+    e.put("pair", pair);
+    e.put("rate", rate);
+    e.put("ts", ts);
+    e.put("source", source);
+    events.publish("RATE_TICK", e);
   }
 
   private boolean knownPair(String pair) {
@@ -223,10 +247,73 @@ public final class MarketService {
   void runScan() {
     scanPending = false;
     long now = clock.getAsLong();
+    boolean wasActive = lastScan != null && lastScan.hasArbitrage();
     lastScan = scanner.scan(now);
     lastScanAt = now;
     nextExpiry = scanner.nextExpiryAfter(now);
     scanCount++;
+    if (lastScan.hasArbitrage() != wasActive) { // newly found or lost: not every scan
+      Map<String, Object> e = scanView();
+      e.put("active", lastScan.hasArbitrage());
+      events.publish("LOOPHOLE_ALERT", e);
+    }
+  }
+
+  /** The latest scan, as GET /api/arbitrage/scan reports it. */
+  public Map<String, Object> scanView() {
+    Map<String, Object> out = new LinkedHashMap<>();
+    boolean has = lastScan != null && lastScan.hasArbitrage();
+    out.put("hasArbitrage", has);
+    out.put("cycle", lastScan == null ? new String[0] : lastScan.cycle());
+    out.put("multiplier", lastScan == null ? 1.0 : lastScan.multiplier());
+    out.put("profitPercent", lastScan == null ? 0.0 : lastScan.profitPercent());
+    out.put("minProfitPercent", scanner.minProfitPercent());
+    out.put("edges", lastScan == null ? 0 : lastScan.edges());
+    out.put("excludedEdges", lastScan == null ? 0 : lastScan.excludedEdges());
+    out.put("belowThreshold", lastScan != null && lastScan.belowThreshold());
+    out.put("scanCount", scanCount);
+    out.put("scannedAt", scanCount == 0 ? null : Instant.ofEpochMilli(lastScanAt).toString());
+    return out;
+  }
+
+  /**
+   * The currency graph, as GET /api/arbitrage/graph reports it: every currency, every known
+   * rate with whether it is stale now and whether it was quoted directly, and the current
+   * cycle (null if none).
+   */
+  public Map<String, Object> graphView() {
+    long now = clock.getAsLong();
+    int n = scanner.currencyCount();
+    boolean[] active = new boolean[n];
+    List<Object> edges = new ArrayList<>();
+    for (int a = 0; a < n; a++) {
+      for (int b = 0; b < n; b++) {
+        if (a == b || !(scanner.rate(a, b) > 0)) continue;
+        active[a] = true;
+        active[b] = true;
+        Map<String, Object> e = new LinkedHashMap<>();
+        e.put("from", scanner.currency(a));
+        e.put("to", scanner.currency(b));
+        e.put("rate", scanner.rate(a, b));
+        e.put("stale", !scanner.usable(a, b, now));
+        e.put("direct", scanner.isDirect(a, b));
+        edges.add(e);
+      }
+    }
+    List<Object> nodes = new ArrayList<>();
+    for (int c = 0; c < n; c++) {
+      Map<String, Object> node = new LinkedHashMap<>();
+      node.put("id", scanner.currency(c));
+      node.put("active", active[c]);
+      nodes.add(node);
+    }
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("source", ratesSource);
+    out.put("nodes", nodes);
+    out.put("edges", edges);
+    out.put("cycle", lastScan != null && lastScan.hasArbitrage() ? lastScan.cycle() : null);
+    out.put("scannedAt", scanCount == 0 ? null : Instant.ofEpochMilli(lastScanAt).toString());
+    return out;
   }
 
   /**

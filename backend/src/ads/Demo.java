@@ -36,7 +36,7 @@ import java.nio.file.Paths;
  * the demo's own state under {@code data/demo/} is reset at the start of every run, so two
  * runs print identical output. It never touches {@code data/accounts.jsonl}.
  */
-final class Demo {
+public final class Demo {
   private static final long SEED = 42;
   private static final int ORDERS = 1_000;
   private static final int TRADERS = 12;
@@ -61,11 +61,7 @@ final class Demo {
 
     Directory directory = new Directory();
     Vault vault = new Vault(accountsFile, Vault.DEFAULT_CACHE_CAPACITY);
-    for (long t = 1; t <= TRADERS; t++) {
-      // trader 12 is small on purpose, so the margin check visibly rejects some orders
-      if (t == TRADERS) vault.open(t, 2_000_000L, 2_000_000L);
-      else vault.open(t, 5_000_000_000L, 3_000_000_000L);
-    }
+    seedAccounts(vault);
     long cashBefore = totalCash(vault);
     Logbook logbook = new Logbook(logDir, directory, ROTATE_EVERY);
     MatchingEngine engine = new MatchingEngine(directory, vault);
@@ -182,6 +178,18 @@ final class Demo {
     System.out.println("inject EUR/GBP tick " + fixed(injected, 6) + " (derived cross was "
         + fixed(derived, 6) + ", +0.4%)");
     System.out.println("scan -> " + describe(scanner.scan()));
+  }
+
+  /**
+   * The demo's 12 traders (also what {@code serve --seed-demo-accounts} creates): ids 1-11
+   * with cash 5e9 and margin 3e9, and trader 12 small on purpose (2e6 each), so the margin
+   * check visibly rejects some of its orders.
+   */
+  public static void seedAccounts(Vault vault) {
+    for (long t = 1; t <= TRADERS; t++) {
+      if (t == TRADERS) vault.open(t, 2_000_000L, 2_000_000L);
+      else vault.open(t, 5_000_000_000L, 3_000_000_000L);
+    }
   }
 
   private static String describe(ScanResult r) {

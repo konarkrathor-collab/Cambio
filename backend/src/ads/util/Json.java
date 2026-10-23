@@ -1,5 +1,6 @@
 package ads.util;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,7 +17,9 @@ import java.util.Map;
  * duplicate keys, and nothing after the value. Nesting is capped at {@link #MAX_DEPTH} so a
  * hostile body cannot exhaust the stack. Errors are {@link JsonException} with the offset.
  *
- * <p>Writing ({@link #write}) accepts the same types (plus any {@code Number}, arrays of
+ * <p>{@link #parseExact} reads non-integer numbers as exact {@code BigDecimal}s instead (for
+ * prices). Writing ({@link #write}) accepts the same types (plus any {@code Number}, with
+ * {@code BigDecimal} in plain notation, arrays of
  * strings and nested maps/lists) and escapes strings per the RFC. Non-finite doubles are
  * refused rather than written as invalid JSON.
  *
@@ -47,7 +50,20 @@ public final class Json {
   // ---------------------------------------------------------------- reading
 
   public static Object parse(String text) throws JsonException {
-    Reader r = new Reader(text);
+    return parse(text, false);
+  }
+
+  /**
+   * Like {@link #parse(String)}, but every number that is not an integer fitting in a long
+   * becomes an exact {@code BigDecimal} instead of a {@code Double}: the API layer reads
+   * order prices this way, so a price never passes through binary floating point.
+   */
+  public static Object parseExact(String text) throws JsonException {
+    return parse(text, true);
+  }
+
+  private static Object parse(String text, boolean exact) throws JsonException {
+    Reader r = new Reader(text, exact);
     r.skipWhitespace();
     Object value = r.value(0);
     r.skipWhitespace();
@@ -59,10 +75,12 @@ public final class Json {
 
   private static final class Reader {
     private final String s;
+    private final boolean exact;
     private int pos;
 
-    Reader(String s) {
+    Reader(String s, boolean exact) {
       this.s = s;
+      this.exact = exact;
     }
 
     void skipWhitespace() {
@@ -208,6 +226,20 @@ public final class Json {
         while (peek() >= '0' && peek() <= '9') pos++;
       }
       String text = s.substring(start, pos);
+      if (exact) {
+        if (integral) {
+          try {
+            return Long.parseLong(text);
+          } catch (NumberFormatException tooBig) {
+            // falls through to an exact BigDecimal
+          }
+        }
+        try {
+          return new BigDecimal(text);
+        } catch (NumberFormatException | ArithmeticException e) {
+          throw new JsonException("number out of range", start);
+        }
+      }
       if (integral) {
         try {
           return Long.parseLong(text);
@@ -249,6 +281,8 @@ public final class Json {
       quote(sb, (String) v);
     } else if (v instanceof Boolean) {
       sb.append(v.toString());
+    } else if (v instanceof BigDecimal) {
+      sb.append(((BigDecimal) v).toPlainString());
     } else if (v instanceof Double || v instanceof Float) {
       double d = ((Number) v).doubleValue();
       if (Double.isNaN(d) || Double.isInfinite(d)) {

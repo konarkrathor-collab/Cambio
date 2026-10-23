@@ -151,6 +151,24 @@ The default is now 0.02% (`ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT`). It can
 
 ---
 
+## B9: Every HTTP response waited about 40 ms (Stage 3)
+
+**What broke.** The first run of the gateway tests took 133 s to place 3,000 orders one after another, about 44 ms each. 200 concurrent orders took 10 s.
+
+**Why.** `com.sun.net.httpserver` writes the response headers and body as separate small writes on a socket without `TCP_NODELAY`. Nagle's algorithm holds the second write back until the client acknowledges the first, and the client delays that acknowledgement by up to 40 ms. Stage 2 never noticed because the feed posts in 250 ms batches.
+
+**Fix.** `ApiServer` sets `sun.net.httpserver.nodelay=true` before the server classes load, unless the property is already set. The same 3,000 orders now take 2.9 s, and the 200 concurrent ones 0.3 s. curl measures 2.5–2.9 ms per order on a warm server.
+
+---
+
+## B10: Pretty-printing the contract examples silently rewrote prices (Stage 3, own tooling, caught before commit)
+
+**What broke.** The first version of `backend/scripts/contract_examples.sh` formatted responses with `python3 -m json.tool`. That parses numbers as binary floats and writes them back, so the server's exact `"price": 1.08520` would have appeared in the contract as `1.0852`. A frontend developer reading the contract would then conclude that the API drops tick decimals.
+
+**Fix.** The script re-indents JSON with a small `awk` program that copies every value character for character and never parses it. `awk` is also present on macOS without Python.
+
+---
+
 ## Note (not a bug): Appendix A lets cash go negative. Accepted in doc 08 at 6462f32
 
 Implemented as written, Appendix A checks margin per order against the account as it is at that moment, and nothing is reserved for resting orders. A market order is checked only at the best opposite tick, even if it then sweeps deeper. So a trader with cash 1,000 can rest two buys of 10 × 100. Each passes on its own, both fill, and cash ends at −1,000. The engine does not improvise a reservation. The Vault accepts negative cash when loading (it rejects only a negative `marginLimit`), and the scenario test `Appendix A reserves no cash…` pins the behaviour down. Doc 08 Appendix A now records this as a known simplification.
