@@ -118,8 +118,9 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 - Connect to `wss://ws.finnhub.io?token=…`, subscribe to the symbols, batch ticks (≤ 250 ms) and forward them to the backend (payloads in **Appendix B**).
 - Reconnect with backoff 1, 2, 4, 8, 10 s (cap) and re-subscribe after every reconnect. If disconnected > 15 s, forward an hourly Frankfurter snapshot (`source: "frankfurter-fallback"`) until the socket returns.
 - Malformed messages are logged and skipped; the process never crashes on bad input. Missing `FINNHUB_API_KEY` exits immediately with a clear message.
-- Modes: `--capture FILE` (record raw ticks as JSON lines — used once to save a real tick log into `benchmark/data/` for the report) and `--replay FILE` (forward a recorded log; lets the system be demoed and tested with no network and no key).
-- Java side: the ingestion handler for `POST /api/market/rates`, updating the scanner's rate store and triggering a throttled scan (`SCAN_THROTTLE_MS = 500`).
+- Modes: `--capture FILE` (record raw ticks as JSON lines) and `--replay FILE` (forward a recorded log; lets the system be demoed and tested with no network and no key). Commit one real capture (a few minutes of ticks, under 2 MB, containing no key) as `feed/samples/finnhub_ticks_<date>.jsonl` so a fresh clone can replay it.
+- **The forex market is closed at weekends** (roughly Friday evening to Sunday evening UTC). Zero ticks then is expected, not a bug: treat Finnhub's `{"type":"ping"}` messages as keep-alives, report "connected, no ticks" in the status, and if no live ticks are available when you capture, say so in the report instead of fabricating a sample. The user will run the live check during market hours.
+- Java side: a minimal server skeleton in `ads.api` (`com.sun.net.httpserver`, a small hand-written JSON reader/writer in `ads.util`) with just two endpoints for now: `POST /api/market/rates` (updates the scanner's rate store, triggers a throttled scan, `SCAN_THROTTLE_MS = 500`) and `GET /api/market/rates/status` (source, last tick time, stale symbols, tick count, scan count, whether the last scan found a cycle). Stage 3 grows this same server into the full gateway, so design it to be extended. All engine access goes through one thread.
 
 **Gate.** With the backend running, `feed.py --replay` drives `GET /api/market/rates/status` to show ticks received and the scanner running; a live run with the real key (run by the user) shows `source: "finnhub-ws"`; unplugging the network flips to `frankfurter-fallback` within ~15 s and back on reconnect; garbage input does not crash either process.
 
@@ -137,7 +138,7 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 | `POST /api/market/rates` | Ingestion from the feed (Appendix B) |
 | `GET /api/market/rates/status` | Source, last tick time, stale symbols (doc 06 §7) |
 | `GET /api/tickers?prefix=US` | Directory search |
-| `GET /api/accounts/{traderId}` | Balance and margin |
+| `GET /api/accounts/{traderId}` | Balance and margin. `traderId` is a number (the engine uses `long`); doc 02's `"T101"` was illustrative, and the dashboard may display it as `T101` |
 | `POST /api/simulate` | Stage 4 |
 | `GET /api/inspector/{pair}` | Internal structure state: levels, queue lengths, ladder node shape (for the under-the-hood view) |
 | `GET /api/stream` | **SSE**: `BOOK_UPDATE`, `TRADE`, `LOOPHOLE_ALERT`, `RATE_TICK` |
@@ -178,10 +179,10 @@ Re-run the benchmark lab and the production parity suite; update docs 03 and 05 
 - **Order types.** `LIMIT` (rests until filled or cancelled) and `MARKET` (takes available liquidity at any price; any unfilled remainder is cancelled, never rests).
 - **Priority.** Best price first; within a price, first-in first-out.
 - **Matching.** An incoming BUY matches resting asks with `askTick ≤ limitTick` (market: any ask), lowest ask first; an incoming SELL mirrors it against bids (`bidTick ≥ limitTick`, highest first). Each fill is `min(incomingRemaining, restingRemaining)` and **executes at the resting order's price**. Continue until the incoming order is filled or no eligible resting order remains. A `LIMIT` remainder then rests at the tail of its price level.
-- **Status.** `FILLED` (fully matched), `PARTIAL` (some matched, remainder rests — or, for a market order, was cancelled), `QUEUED` (nothing matched, now resting), `REJECTED` (with reason: `UNKNOWN_PAIR`, `BAD_QUANTITY`, `BAD_PRICE`, `MARGIN`, `NO_LIQUIDITY`).
+- **Status.** `FILLED` (fully matched), `PARTIAL` (some matched, remainder rests — or, for a market order, was cancelled), `QUEUED` (nothing matched, now resting), `REJECTED` (with reason: `UNKNOWN_PAIR`, `BAD_QUANTITY`, `BAD_PRICE`, `MARGIN`, `NO_LIQUIDITY`). **Validation precedence**, first failure wins: `UNKNOWN_PAIR`, `BAD_QUANTITY`, `BAD_PRICE` (limit orders only; a market order's price is ignored), `NO_LIQUIDITY` (market orders only), `MARGIN`. A trader with no account is rejected `MARGIN`. Every submission, rejected or not, consumes an order id; the engine sequence number advances on every submit and every cancel.
 - **Cancel.** Only resting orders can be cancelled; the response carries the remaining quantity. Unknown or already-filled ids are `NOT_FOUND`. An emptied price level is removed from its ladder.
 - **Self-trade.** Not prevented; a trader's orders may match each other. (Documented simplification.)
-- **Accounts.** `Account{traderId, cash, marginLimit}`. A BUY needs `qty × limitTick ≤ min(cash, marginLimit)`; a SELL needs `qty × limitTick ≤ marginLimit` (shorting inside the margin is allowed). A MARKET order is checked against `qty × bestOppositeTick`; with no opposite liquidity it is rejected `NO_LIQUIDITY`. On each trade: `buyer.cash −= notional`, `seller.cash += notional`.
+- **Accounts.** `Account{traderId, cash, marginLimit}`. A BUY needs `qty × limitTick ≤ min(cash, marginLimit)`; a SELL needs `qty × limitTick ≤ marginLimit` (shorting inside the margin is allowed). A MARKET order is checked against `qty × bestOppositeTick`; with no opposite liquidity it is rejected `NO_LIQUIDITY`. On each trade: `buyer.cash −= notional`, `seller.cash += notional`. **Known simplification:** resting orders reserve no cash and a market order is checked only at the best opposite price, so cash can legitimately go negative (two resting buys that each pass the check can both fill). This is documented and pinned by a test; it is a simulator, not a clearing house.
 - **Determinism.** Order ids are assigned from a counter; priority and "time" are the engine's sequence number.
 
 ## Appendix B — Feed → backend payloads
