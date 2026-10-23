@@ -141,7 +141,7 @@ Status fields:
 
 ### 3.10 `GET /api/health`
 
-`{status: "ok", seq, restingOrders, accounts, sseClients, sseDropped, uptimeMs}`. The response comes from the engine thread, so a stuck engine shows up as a `500 INTERNAL` after 10 s instead of an `ok`.
+`{status: "ok", seq, restingOrders, accounts, sseClients, sseDropped, uptimeMs, hasSimulation}`. `hasSimulation` (boolean; additive, Stage 6) is true once a simulation has finished in this server session, so a client can skip `GET /api/simulate/last` and its 404 on a fresh server. The response comes from the engine thread, so a stuck engine shows up as a `500 INTERNAL` after 10 s instead of an `ok`.
 
 ### 3.11 `GET /api/trades?pair=P&limit=N` (additive, Stage 3 addendum)
 
@@ -233,7 +233,8 @@ Response: **200**
     "accounts": 12,
     "sseClients": 0,
     "sseDropped": 0,
-    "uptimeMs": 142
+    "uptimeMs": 169,
+    "hasSimulation": false
 }
 ```
 

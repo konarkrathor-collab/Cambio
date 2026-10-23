@@ -23,7 +23,13 @@ npm ci                                              # exact versions from packag
 npm run dev                                         # http://127.0.0.1:5173
 ```
 
-Open <http://127.0.0.1:5173>. The dev server proxies `/api` to `http://127.0.0.1:8080`,
+On macOS, `npm ci` prints a warning that the optional `fsevents` package's install
+scripts were not run (or were skipped). It is harmless: `fsevents` is an optional file-watching
+helper pulled in by the build tools, and nothing in this project needs its install script.
+
+Open <http://127.0.0.1:5173>. The window must be at least 1024 px wide: from 1024 to 1279 px
+the columns reflow to two (classroom projector), and below 1024 px the page shows a notice
+instead of a broken layout. The dev server proxies `/api` to `http://127.0.0.1:8080`,
 including the event stream, unbuffered. The Python feed (`feed/`) is optional. Without it
 the data-source badge says WAITING, and DEMO › Inject loophole drives the arbitrage view.
 
@@ -32,7 +38,7 @@ Other scripts:
 ```sh
 npm test            # Vitest, once (no watch)
 npm run build       # production build into frontend/dist
-npm run preview     # serve frontend/dist on 127.0.0.1:4173 (no /api proxy; Stage 7 serves it from Java)
+npm run preview     # serve the production build on 127.0.0.1:4173, with the same /api proxy
 ```
 
 ## Views
@@ -69,7 +75,8 @@ npm run preview     # serve frontend/dist on 127.0.0.1:4173 (no /api proxy; Stag
 
 ## Tests
 
-`npm test` runs 120 Vitest tests in Node, with no browser:
+`npm test` runs 122 Vitest tests in Node, with no browser (the error-boundary test renders
+into `happy-dom`):
 
 - the API wrapper's error mapping
 - every reducer, including fill accounting for the session's own orders
@@ -83,13 +90,19 @@ npm run preview     # serve frontend/dist on 127.0.0.1:4173 (no /api proxy; Stag
 - the doc 04 target evaluation
 - the demo generators
 - the graph layout
+- the per-view error boundary: a failing view shows a recoverable message, the others keep working
 - a replay of the recorded `/api/stream` transcript from contract §7 (read from the
   contract itself) through the reducers
 
 ## Known behaviour
 
-- Chrome logs every HTTP error response in the console as "Failed to load resource", even
-  when the page handles it. On the golden path that happens for
-  `GET /api/simulate/last` → 404 `NO_SIMULATION` on a fresh server (twice in `npm run dev`,
-  where React StrictMode mounts twice), and for a deliberate 409. While the backend is down,
-  the proxy's 502s are logged too. The application itself logs nothing.
+- The application logs nothing to the browser console. On a fresh server the Simulator
+  asks `GET /api/simulate/last` only once `GET /api/health` reports `hasSimulation: true`,
+  so no 404 is logged. `npm run dev` adds three lines of its own: Vite's `[vite] connecting…` /
+  `connected.` and React's development-build DevTools notice. The production build
+  (`npm run preview`) adds none.
+- Chrome still logs any HTTP error the page receives as "Failed to load resource": for
+  example a 409 when another client is running a simulation, or the proxy's 502s while the
+  backend is down.
+- A view that throws while rendering shows "… view failed" with a **Try again** button in
+  its place; the other views, the top bar and the stream keep working.

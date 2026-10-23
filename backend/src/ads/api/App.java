@@ -714,6 +714,7 @@ public final class App {
     out.put("sseClients", hub.clientCount());
     out.put("sseDropped", hub.droppedClients());
     out.put("uptimeMs", System.currentTimeMillis() - startedAt);
+    out.put("hasSimulation", simulations.hasResult()); // additive, Stage 6
     return out;
   }
 

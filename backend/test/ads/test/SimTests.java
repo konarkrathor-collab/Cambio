@@ -39,7 +39,7 @@ final class SimTests {
         SimTests::mix);
     r.check("POST /api/simulate leaves the live book, accounts, trades, seq and stream untouched",
         SimTests::isolated);
-    r.check("a second simulation while one runs gets 409 SIMULATION_RUNNING; GET last",
+    r.check("a second simulation while one runs gets 409 SIMULATION_RUNNING; GET last; health.hasSimulation",
         SimTests::concurrent);
     r.check("bad parameters get 400; an empty body is all defaults", SimTests::badParams);
   }
@@ -296,6 +296,8 @@ final class SimTests {
     return withApp(hook, c -> {
       check(c.errorCode(c.send("GET", "/api/simulate/last", null)).equals("404 NO_SIMULATION"),
           "last before any");
+      check(Boolean.FALSE.equals(c.json("GET", "/api/health", null, 200).get("hasSimulation")),
+          "health.hasSimulation before any");
       ExecutorService pool = Executors.newSingleThreadExecutor();
       try {
         Future<HttpResponse<String>> first =
@@ -309,6 +311,8 @@ final class SimTests {
         release.countDown();
         HttpResponse<String> done = first.get(30, TimeUnit.SECONDS);
         check(done.statusCode() == 200, "first: " + done.statusCode() + " " + done.body());
+        check(Boolean.TRUE.equals(c.json("GET", "/api/health", null, 200).get("hasSimulation")),
+            "health.hasSimulation after the first result");
         HttpResponse<String> last = c.send("GET", "/api/simulate/last", null);
         check(last.statusCode() == 200 && last.body().equals(done.body()), "last != result");
         // and the next one is accepted again

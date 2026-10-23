@@ -6,6 +6,7 @@ import SimulatorView from './components/SimulatorView.jsx';
 import InspectorView from './components/InspectorView.jsx';
 import DemoDrawer from './components/DemoDrawer.jsx';
 import { useStore } from './app/runtime.js';
+import ViewBoundary from './components/ViewBoundary.jsx';
 
 const TABS = [
   { id: 'market', label: 'Market', View: MarketView },
@@ -33,8 +34,12 @@ export default function App() {
   };
 
   const backendDown = useStore((s) => s.health.up === false);
-  const { View } = TABS.find((t) => t.id === tab);
+  const { View, label } = TABS.find((t) => t.id === tab);
   return (
+    <>
+    <p className="narrow-notice" role="note">
+      This dashboard needs a window at least 1024 pixels wide. Widen the window or zoom out.
+    </p>
     <div className="app">
       <TopBar />
       {backendDown ? (
@@ -63,9 +68,14 @@ export default function App() {
         ))}
       </nav>
       <main id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="view">
-        <View />
+        <ViewBoundary name={label} resetKey={tab}>
+          <View />
+        </ViewBoundary>
       </main>
-      <DemoDrawer />
+      <ViewBoundary name="Demo tools" resetKey="demo">
+        <DemoDrawer />
+      </ViewBoundary>
     </div>
+    </>
   );
 }

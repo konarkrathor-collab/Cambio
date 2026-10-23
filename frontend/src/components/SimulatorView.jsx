@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { api } from '../lib/api.js';
-import { describeError } from '../app/runtime.js';
+import { describeError, useStore } from '../app/runtime.js';
 import { evaluateTargets } from '../lib/targets.js';
 import { formatInt, formatMicros, formatMillis, formatTime } from '../lib/format.js';
 import Panel, { PanelState } from './Panel.jsx';
@@ -18,16 +18,24 @@ export default function SimulatorView() {
   const [, tick] = useState(0);
   const id = useId();
 
+  // GET /api/simulate/last only when health says a result exists: on a fresh server that
+  // avoids the contract's 404, which the browser would log in the console
+  const hasSimulation = useStore((s) => (s.health.data ? s.health.data.hasSimulation : null));
   useEffect(() => {
+    if (hasSimulation === null) return undefined; // health not known yet
+    if (hasSimulation === false) {
+      setLoadState((st) => (st === 'ok' ? st : 'none'));
+      return undefined;
+    }
     let live = true;
     api.simulateLast().then(
-      (r) => live && (setResult(r), setLoadState('ok')),
+      (r) => live && (setResult((cur) => cur ?? r), setLoadState('ok')),
       (e) => live && (e.code === 'NO_SIMULATION' ? setLoadState('none') : (setLoadState('error'), setError(describeError(e)))),
     );
     return () => {
       live = false;
     };
-  }, []);
+  }, [hasSimulation]);
 
   useEffect(() => {
     if (!running) return undefined;

@@ -74,6 +74,11 @@ public final class SimulationRunner {
     return r;
   }
 
+  /** True once a simulation has finished in this server session (GET /api/health). */
+  public boolean hasResult() {
+    return last != null;
+  }
+
   public boolean running() {
     return running.get();
   }
