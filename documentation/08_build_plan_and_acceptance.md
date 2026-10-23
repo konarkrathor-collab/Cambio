@@ -124,6 +124,13 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 
 **Gate.** With the backend running, `feed.py --replay` drives `GET /api/market/rates/status` to show ticks received and the scanner running; a live run with the real key (run by the user) shows `source: "finnhub-ws"`; unplugging the network flips to `frankfurter-fallback` within ~15 s and back on reconnect; garbage input does not crash either process.
 
+### Stage 2 addendum — four corrections found in review (do these first, as their own commit, before any Stage 3 work)
+
+1. **Stale quotes must not reach the scan.** Staleness is currently only *reported*. The scanner must ignore any direct quote older than `STALE_AFTER_MS` (30 s) and any cross-rate that depends on one, so that a feed that stops makes arbitrage alerts stop instead of freezing them. The scan result and the status report how many edges were excluded. Rates from a fallback snapshot share the snapshot's receive time and stay valid for 2 hours (twice the hourly poll). When the source switches (live to fallback or back), clear the rate store so snapshot and live rates are never mixed in one graph. Tests: advance a fake clock past 30 s and assert the scan loses the stale edges; assert no alert survives a dead feed; assert no cycle can mix the two sources.
+2. **INR is fallback-only.** OANDA streams no INR pair (all 7 are missing, see `feed/symbols.json`), so in live mode the scanner's graph has 7 currencies and 21 pairs; INR appears only while the fallback snapshot is the source. Update doc 06 §4 to say so. Order trading still supports INR pairs through the Directory.
+3. **Data-driven profit threshold.** Real ticks alternate between bid and ask, so the 0.001% default reports "arbitrage" on the real capture (for example +0.0056%). Using only the committed capture in `feed/samples/`, replay it through the scanner offline and report, for thresholds 0.001, 0.005, 0.01, 0.02 and 0.05%, the share of scans that report a cycle, plus the p50, p90, p99 and max best-cycle profit. Make the threshold configurable (`serve --min-profit PERCENT`, or the `MIN_PROFIT_PERCENT` environment variable) and default it to the smallest value for which fewer than 1% of scans of the real capture report a cycle. The demo's injected +0.4% must still be detected. Record the table in `backend/BUGS.md` and doc 06.
+4. **Portability.** `feed/replay_check.sh` uses GNU `timeout`, which macOS does not have. Replace it with something portable (for example `curl --max-time`) and check every script in the repo for other GNU-only commands. The demo machine is a Mac.
+
 ### Stage 3 — API gateway and frozen contract
 
 **Build.** The Java HTTP server (`com.sun.net.httpserver`) with one engine thread serialising all mutations. Endpoints:
@@ -139,6 +146,8 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 | `GET /api/market/rates/status` | Source, last tick time, stale symbols (doc 06 §7) |
 | `GET /api/tickers?prefix=US` | Directory search |
 | `GET /api/accounts/{traderId}` | Balance and margin. `traderId` is a number (the engine uses `long`); doc 02's `"T101"` was illustrative, and the dashboard may display it as `T101` |
+| `GET /api/accounts` | List accounts |
+| `POST /api/accounts` | Create an account `{traderId, cash, marginLimit}`; 409 if it exists |
 | `POST /api/simulate` | Stage 4 |
 | `GET /api/inspector/{pair}` | Internal structure state: levels, queue lengths, ladder node shape (for the under-the-hood view) |
 | `GET /api/stream` | **SSE**: `BOOK_UPDATE`, `TRADE`, `LOOPHOLE_ALERT`, `RATE_TICK` |
@@ -146,7 +155,21 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 
 Errors use one shape: `{"error":{"code":"…","message":"…"}}` with correct HTTP codes (400 bad input, 404 unknown id, 409 conflict). CORS allows the Vite dev origin. Pair strings are case-sensitive in the Directory (the Stage 0 trie rejects characters outside `A–Z` and `/`), so handlers **upper-case pair input at the API boundary** before any lookup. The builder writes **`documentation/09_api_contract.md`** with every endpoint, request/response example and error code.
 
-**Gate.** `backend/scripts/smoke.sh` exercises every endpoint with `curl`; the SSE stream shows events while orders are placed; malformed JSON returns 400 and the server keeps running. The supervisor reviews and **freezes** the contract — Stage 5 may not start before this.
+**Stage 3 decisions (fixed here so the contract does not drift):**
+- **Composition.** One `ads.api.App` wires the Directory, Vault (`--data-dir`, default `backend/data`), MatchingEngine, Logbook, ArbitrageScanner and MarketService onto the existing `ApiServer` and `EngineThread`. Every command goes through the engine thread; handlers never touch engine state directly. After each command the engine thread calls `logbook.rotateIfDue()`. On shutdown, flush the Vault and write the final Logbook segment.
+- **Prices and pairs at the boundary.** The API speaks decimals and `EUR/USD`; the engine speaks integer ticks and pair ids. Convert with exact decimal parsing (`BigDecimal` is fine in the `api` layer). A price that is not an exact multiple of the pair's tick size is a business rejection `BAD_PRICE`. Never convert a price through `double`. Pair names in a URL path use a hyphen (`/api/orderbook/EUR-USD`); bodies use `EUR/USD`; both are upper-cased. Expose each pair's `tickSize` in `/api/tickers`.
+- **Two kinds of failure.** A malformed request (bad JSON, wrong types, a missing field, an unknown enum value) is HTTP 400 with the error shape. A well-formed order the engine refuses is HTTP 200 with `{"status":"REJECTED","reason":"…"}`. An unknown order id on cancel is 404; creating an account that already exists is 409.
+- **Order ids** are shown as `ORD-<n>` and accepted as `ORD-<n>` or `<n>`.
+- **Accounts.** If the accounts file is empty at startup and `--seed-demo-accounts` is given, create the 12 demo traders the demo uses.
+- **Order book snapshot** `GET /api/orderbook/{pair}?depth=N` (default 10, maximum 50): `bids` and `asks`, each level `{price, volume, orders, cumulative}`, both sides best-first, plus `seq` and `lastTradePrice` (or null).
+- **SSE** `GET /api/stream`: events `BOOK_UPDATE` (the touched pair's top-10 snapshot after every order or cancel that changed it), `TRADE`, `LOOPHOLE_ALERT` (when a scan newly finds or loses a cycle, not on every scan) and `RATE_TICK` (at most 4 per second per pair). Send `retry:` and `id:` fields and a comment heartbeat every 15 s. A slow or dead client must never block the engine thread: give each client a bounded queue and drop the client when it overflows.
+- **Inspector** `GET /api/inspector/{pair}`: for each side, the levels with order counts and queue heads, plus the ladder's shape (height, node and leaf counts). Add the read-only `describe` method this needs to `BPlusTreeLadder`.
+- **Graph** `GET /api/arbitrage/graph`: `nodes` (currencies), `edges` (from, to, rate, stale) and the current `cycle` (or null).
+- **Network.** Bind to 127.0.0.1 by default (`--host`, `--port`). CORS allows `http://localhost:5173` and `http://127.0.0.1:5173` only.
+- **Scripts** (`smoke.sh` and any other) must run on macOS and Linux: `curl` only, no GNU-only commands.
+- **Tests** add HTTP-level tests with `java.net.http.HttpClient`: a crossing pair of orders produces trades and updated balances; cancel; every error path (400, 404, 409, and REJECTED with each reason); price conversion (exact, a non-multiple of the tick, absurdly large); upper-casing and hyphenated paths; an SSE client receives BOOK_UPDATE, TRADE and LOOPHOLE_ALERT in order; a deliberately slow SSE client does not stall order flow; 200 concurrent orders from 8 threads give the same result as a serial replay; accounts and the logbook survive a restart through the API.
+
+**Gate.** `backend/scripts/smoke.sh` exercises every endpoint with `curl`; the SSE stream shows events while orders are placed; malformed JSON returns 400 and the server keeps running; the whole backend and feed suites still pass; `09_api_contract.md` documents every endpoint using real requests and responses captured from the running server. The supervisor reviews and **freezes** the contract — Stage 5 may not start before this.
 
 ### Stage 4 — Simulator and load test
 
