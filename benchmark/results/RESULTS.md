@@ -61,6 +61,8 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 
 ## Run 3 — Arbitrage detection, real data: does today's forex market actually have arbitrage?
 
+> **Superseded timing (Runs 3–5, see Run 12b):** sequential, single-scan reps with reconstruction timed; a warm real-data scan is ~0.6 µs, not ~10 µs. The no-arbitrage finding and all correctness results stand.
+
 **Command:** `./run.sh arbitrage --graph real --seed 42 --reps 7 --warmup 3`
 **Data:** a genuine captured snapshot — `GET https://api.frankfurter.dev/v1/latest?base=USD`,
 2026-10-09, archived verbatim at `data/frankfurter_usd_2026-10-09.json` (the Frankfurter API
@@ -130,6 +132,8 @@ corrected, per this project's own standing policy of showing the mistake, not ju
 
 ## Run 5 — Arbitrage detection at project scale (V=20, V=50; no independent oracle)
 
+> **Superseded timing (see Run 12b):** these medians were taken sequentially, one microsecond scan per rep after 3 warmup scans, with cycle reconstruction inside the timed region. Johnson (identical code to Bellman-Ford) timing 2× faster here was the symptom. Correctness findings stand; use Run 12b for timing.
+
 **Commands:**
 `./run.sh arbitrage --graph synthetic --v 20 --inject false --seed 7 --reps 9 --warmup 3`
 `./run.sh arbitrage --graph synthetic --v 50 --inject true --seed 7 --reps 9 --warmup 3`
@@ -188,6 +192,8 @@ the bugs documented in Run 4, kept as an honest record rather than scrubbed).
 
 ## Run 6 — Order queue: FIFO execution + arbitrary cancel-by-id
 
+> **Correction (see Run 12a):** the tree-by-id row below measured a handicap — the treap scanned the whole tree for the FIFO head although ids are assigned in arrival order (head = smallest id, O(log n)). Corrected, it is ~2.2× slower than the pick, not 105×. Finding 2 below is withdrawn.
+
 **Command:** `./run.sh queue --n 300000 --seed 42 --reps 7 --warmup 3`
 **Workload:** 300,000 ops (enqueue 150,049 / dequeue-head 134,841 / cancel-by-id 12,083 / peek 3,027; 3,125 live orders at the end). The mix and its justification live in `QueueWorkload`'s class javadoc (~8% of arrivals cancelled pre-execution — inside the commonly cited 5–20% exchange band; ~90% execute FIFO; ~2% accumulate as depth). All candidates validated against the `LinkedHashMap` oracle (checksum `0xe9ed43f6fd1fef66` + exact final-state equality) before any timing.
 
@@ -234,6 +240,8 @@ the bugs documented in Run 4, kept as an honest record rather than scrubbed).
 **Caveats:** single-threaded Apple M4; 3 discarded warmups + 7 timed reps; one seeded stream at Zipf s = 1.0 (the `--zipf` flag exists for sensitivity runs — a sharper exponent would only strengthen the splay rejection, a flatter one weakens the locality story; noted, not run). Oracle is same-family (`LinkedHashMap`) but JDK-hardened — the independence bar this module's brief set. Raw rows appended to `results/raw_results.csv`.
 
 ## Run 8 — Ticker registry: exact-match validation + autocomplete (two-phase)
+
+> **Correction (see Run 12d):** under interleaved timing at two seeds, the hash set is ~1.8× faster than the trie on exact match (not "a statistical tie"), and the trie's prefix lead over TST/sorted-array is ~1.15–1.3× (not ~1.5×). The N/A capability finding and the verdict stand.
 
 **Command:** `./run.sh ticker --n 300000 --seed 42 --reps 7 --warmup 3`
 **Data:** a 132-pair universe ("USD/EUR"-style — 12 currencies quoted in every direction; the first 8 match doc 06's roster), loaded once in a seeded shuffle, then queried. **Two phases, deliberately:** phase 1 (insert + contains) gives the hash set — which CANNOT do prefix search — a fair timed baseline; phase 2 (insert + contains 65% / autocomplete 35%, avg 6.9 matches per prefix) is the workload this subsystem exists for. ~60% of contains targets are registered pairs, ~40% synthetic typos; prefix lengths 1–6. All rows oracle-gated (checksums `0x6abd41c49b164a6` / `0x12d276fbe26e1156`; the prefix checksum includes an order-independent fold of every returned match set, since candidates may return matches in any order).
@@ -298,6 +306,8 @@ the bugs documented in Run 4, kept as an honest record rather than scrubbed).
 
 ## Run 10 — Ladder v2: hand-rolled BST, AVL, red-black, splay join the walk workload
 
+> **Correction (see Run 12c):** finding 1's "real RB ~12% faster than radix" did not reproduce across three seeds × two runs on a second machine under interleaved timing — radix16 and red-black tie (means 34.6 vs 34.9 ms, 3–3 head-to-head). The memory edge and rotation counters reproduce exactly.
+
 **Command:** `./run.sh ladder --n 300000 --seed 42 --reps 7 --warmup 3`
 Same workload as Run 1; the candidate set now includes the four hand-rolled syllabus trees the roadmap promised, each oracle-gated before timing. All ten candidates validated on the first run.
 
@@ -358,3 +368,72 @@ Same op mix as the walk pattern, but PUT targets arrive in strict **ascending** 
 
 **Caveats:** sub-millisecond rows have noisy spreads (JIT/GC dominates at this absolute scale — skip-list's 145% is noise on a 1.2 ms row); the qualitative gap (25.6 ms vs ≤ 0.88 ms) dwarfs all of it. n=12,000 was sized so the adversarial run completes comfortably given the spine arithmetic (~6,256 distinct ascending inserts); a larger run would widen, not shrink, the BST gap.
 
+
+## Run 12 — Harness corrections: interleaved timing, treap head lookup, untimed reconstruction
+
+**Why this run exists.** A full review of the lab found four problems with how earlier runs were *timed* (no correctness result was ever wrong — every checksum, op count, ratio and rotation counter from Runs 1–11 reproduced bit-for-bit). Per this project's standing policy they are recorded here, not silently patched:
+
+1. **The tree-by-id queue candidate was handicapped.** `TreeQueueOps` assumed "id order ≠ arrival order" and found the FIFO head with a full O(n) traversal. But `QueueWorkload` has always assigned ids with `nextId++` at arrival — exactly what an exchange sequencer does — so the head is simply the smallest id, a leftmost walk in expected O(log n). Run 6's "436.96 ms, 105× slower than the pick, worst by two orders of magnitude" measured the handicap, not the structure. **Fix:** leftmost-walk head lookup; the `QueueOps` contract now states the id-ordering assumption, and the treap throws on a non-increasing id instead of silently returning the wrong head.
+2. **Sequential timing leaked JIT state between candidates.** Each candidate's warmup+reps ran back-to-back, so later candidates were measured under a different JIT/profile/inlining state (the shared `replay` call site goes megamorphic as more classes pass through it). Smoking gun: `JohnsonArbitrage` is a pure delegate to `BellmanFordArbitrage` — identical code — yet timed 0.089 vs 0.189 ms (Run 5) and 0.32 vs 0.83 ms (review re-run) purely from running later. **Fix:** `core/Interleaved.java` — warmup and timed reps run round-robin across all verified candidates with a rotating start (README fairness rule 3b), for the ladder, queue, cache, ticker and arbitrage benches. (Compression keeps its per-candidate encode/decode phases; its rows are tens of ms and its conclusions are ratio-driven.)
+3. **Single-machine speed rankings were treated as settled.** The review re-run on a different machine flipped Run 10's "red-black ~12% faster than radix" and Run 8's "hash set and trie tie on exact match". **Fix:** not a code fix — this run measures the ladder at three seeds × two runs and the other benches at two seeds, and README rule 3c now says gaps under ~15–20% are ties unless they reproduce.
+4. **Arbitrage timed cycle reconstruction**, although `GraphOps` documents it as verification-only, and each "rep" was a single microsecond scan after only 3 warmup scans (the first candidate was measured largely before JIT compilation). **Fix:** timed unit = build + `hasNegativeCycle()` only; each rep is a batch of scans sized to ~2M edge relaxations; every candidate warms up for ≥ 2,000 scans. Medians are now **per scan**.
+
+**Machine:** these numbers come from a Linux cloud container (JDK 21), **not the Apple M4** of Runs 1–11, so absolute times are not comparable to earlier runs — only the ratios and rankings below are. All commands use `--reps 9 --warmup 3`; every candidate in every run below passed its correctness gate. Raw rows appended to `raw_results.csv`.
+
+### 12a — Order queue with the corrected treap (`./run.sh queue --n 300000 --seed {42,7} --reps 9 --warmup 3`)
+
+| structure | median ms (seed 42) | median ms (seed 7) | vs pick | alloc B/op |
+|:---|--:|--:|--:|--:|
+| oracle-linkedMap (JDK baseline) | 10.00 | 9.17 | ~1.0–1.1× | 45.2 |
+| array (shift-on-cancel) | 11.40 | 9.78 | 1.0–1.3× | 0.4 |
+| singly-list | 28.10 | 23.88 | 2.5–3.1× | 16.0 |
+| dll-no-index | 28.41 | 26.08 | 2.7–3.2× | 20.0 |
+| **tree-by-id (treap, corrected)** | **20.24** | **20.06** | **2.1–2.3×** | 24.0 |
+| **dll+hash (the pick)** | **8.97** | **9.59** | — | 20.2 |
+
+**Correction to Run 6 / doc 05 §2:** the treap is ~2.2× slower than the pick, **not 105×**, and it beats both un-indexed lists. The rubric's design bullet — "a balanced tree keyed by orderId gives O(log N) everywhere, strictly worse than O(1)" — was right all along; Run 6's "optimistic" refinement of it was an artifact of the handicap. The pick still wins, but on this shallow book (~3k live orders) its lead over the plain array is within noise (seed 7: 9.59 vs 9.78 ms) — Run 6's honest-surprise finding holds more strongly than it did.
+
+### 12b — Arbitrage, per-scan, interleaved (`./run.sh arbitrage ... --reps 9 --warmup 3`)
+
+| structure | real V=8 (µs) | V=8 injected (µs) | V=20, no cycle, seed 7 (µs) | V=50 injected, seed 7 (µs) |
+|:---|--:|--:|--:|--:|
+| bellman-ford | **0.6** | 0.7 | 9.1 | 160.7 |
+| johnson (BF delegate) | 0.6 | 0.6 | 8.6 | 145.3 |
+| spfa | 1.0 | 1.5 | **3.4** | 216.7 |
+| floyd-warshall | 2.0 | 2.3 | 13.0 | 160.7 |
+| tarjan+bf | 2.4 | 3.5 | 16.3 | 284.0 |
+
+1. **The bias is gone:** Johnson now tracks Bellman-Ford within run noise at every scale (0.6/0.6, 8.6/9.1, 145/161 µs), as its implementation guarantees.
+2. **Run 3–5's small-graph numbers were mostly JIT warmup.** A warm real-data scan is ~0.6 µs, not the 10 µs Run 3 reported.
+3. **Doc 03/04 latency targets, re-checked:** doc 04's "< 100 µs at 20 currencies" holds with ~10× headroom (9.1 µs). Doc 03's "< 50 µs for 10–50 currencies" holds at V=20 but **not** at V=50 with a cycle (161 µs) — Run 5 had said the opposite while quoting a 56 µs V=20 median.
+4. **SPFA:** fastest when no cycle exists (V=20: 2.7× faster than BF) and slowest-but-Tarjan with one (V=50: 1.35× slower) — the input-dependence doc 05 §3 cites, now measured cleanly. (Run 5's "2.5× vs ~8.6×" scaling sentence was garbled; on these graphs SPFA goes 3.4→216.7 µs, ×64, vs BF's 9.1→160.7 µs, ×18 — different graphs, cycle vs none, so read it as "SPFA's cost depends on whether there is a cycle", not as an asymptotic claim.)
+5. **Floyd-Warshall is no longer "slowest at both scales":** it ties Bellman-Ford at V=50 (160.7 µs each — its O(V³) inner loop is branch-light and cache-friendly) and is 1.4–3.5× slower at V=8/20. The rejection still stands on doc 05 §3's actual grounds (all-pairs work we don't need, O(V²) memory); the "2–4× slower everywhere" evidence did not survive fair timing.
+
+### 12c — Price ladder robustness: three seeds × two runs (`./run.sh ladder --n 300000 --seed {42,7,1234} --reps 9 --warmup 3`, each twice)
+
+| structure | 6 medians (ms) | mean | B/op |
+|:---|:--|--:|--:|
+| flat-array | 13.40 13.06 13.64 12.69 11.71 11.35 | **12.6** | 1.7 |
+| radix16 | 36.70 33.79 33.07 38.24 31.69 33.99 | **34.6** | 8.6 |
+| red-black | 34.57 36.71 36.42 34.89 33.43 33.53 | **34.9** | 12.6 |
+| bst | 37.67 35.00 37.56 34.56 30.79 34.90 | 35.1 | 10.5 |
+| sorted-array | 40.45 41.00 43.75 36.81 35.50 39.69 | 39.5 | 16.0 |
+| avl | 41.64 41.89 47.39 42.54 45.63 39.31 | 43.1 | 10.5 |
+| oracle-treeMap | 53.37 55.49 55.04 51.87 56.29 51.47 | 53.9 | 57.8 |
+| skip-list | 55.84 56.30 59.41 54.66 60.17 58.45 | 57.5 | 83.4 |
+| splay | 58.58 59.04 63.36 59.94 57.79 59.11 | 59.6 | 10.5 |
+| unsorted-array | 134.68 132.14 134.19 138.10 143.12 131.86 | 135.7 | 16.0 |
+
+1. **Radix16 vs red-black is a tie, not a red-black win.** Each wins 3 of 6 head-to-heads; means differ by 1%. Run 10's "real RB ~12% faster than radix" did not reproduce on a second machine — it is withdrawn. Plain BST joins the same tie on this (random-walk) workload.
+2. **What does reproduce exactly:** radix's memory edge (8.6 vs 12.6 B/op, ~32% less, identical on every seed and machine), the rotation counters (seed 42: RB 66,857 / AVL 78,895, as Run 10; AVL +18% at every seed), and flat-array's narrow-range speed lead (~2.7× faster than radix here).
+3. **Wide range (`--range 16777216`, seed 42):** flat-array 3,668 ms / 447.4 B/op vs radix16 33.1 ms / 8.6 B/op; every other structure unchanged — Run 2's robustness result reproduces (more dramatically on this machine: ~270× slower than at narrow range).
+4. **Sorted adversarial (`--pattern sorted --n 12000 --band 4000`):** BST 44.7 ms vs every balanced candidate ≤ 1.43 ms (31×+) — Run 11 reproduces. Rotation counts identical to Run 11.
+
+### 12d — Ticker and cache rankings across seeds (seed 42 / seed 7)
+
+- **Ticker, exact match:** hash-set 5.46/5.35 ms, trie 9.69/9.51, TST 16.0/16.0, sorted-array 22.2/21.2. **The trie is ~1.8× slower than the hash set, not a "statistical tie"** (Run 8) — withdrawn. **Prefix:** trie 35.4/34.8 ms vs TST 40.7/44.7 and sorted-array 46.7/44.0 — the trie still wins the workload it exists for, but by ~1.15–1.3×, not Run 8's ~1.5×. Hash set N/A as before.
+- **Cache:** hash+LRU 14.0/15.3 ms vs open addressing 7.1/7.5 (pick ~2× slower, as Run 7 said), splay 78.7/81.2 (~5.5× slower than the pick); oracle LinkedHashMap 24.7/18.7 (the pick is 1.2–1.8× faster). Run 7's findings reproduce in shape.
+
+### What changes in the verdicts
+
+None of the six picks changes. Three pieces of supporting evidence are corrected: the treap is a 2.2× loser, not a 105× one (§2); the walk-workload speed comparison between radix and red-black is a tie, so §1's verdict rests on memory and tick-range robustness alone (it already said so); Floyd-Warshall's rejection rests on its stated grounds, not on being slowest everywhere (§3). Docs 05 and 07 are updated accordingly.

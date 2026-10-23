@@ -19,6 +19,7 @@ import ads.bench.cache.OpenHashCache;
 import ads.bench.cache.SplayCache;
 import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
+import ads.bench.core.Interleaved;
 import ads.bench.ladder.AvlLadder;
 import ads.bench.ladder.BstLadder;
 import ads.bench.ladder.FlatArrayLadder;
@@ -61,9 +62,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.BiFunction;
 
 /** CLI entry point. Example: ./run.sh ladder --n 300000 --seed 42 --reps 7 --warmup 3 */
 public final class Main {
@@ -186,20 +190,17 @@ public final class Main {
         csv.write(BenchResult.csvHeader());
         csv.newLine();
       }
+      Map<String, String> problems = new LinkedHashMap<>();
+      Map<String, Interleaved.Trial> trials = new LinkedHashMap<>();
       for (Map.Entry<String, LadderBench.Factory> e : candidates.entrySet()) {
-        String name = e.getKey();
         String problem = LadderBench.verify(e.getValue().create(), w, oracleChecksum, oracleState);
-        BenchResult r;
-        if (problem != null) {
-          anyFailed = true;
-          r = LadderBench.failed("ladder", name, w, reps, problem);
-        } else {
-          r = LadderBench.timed("ladder", name, e.getValue(), w, warmup, reps, alloc, "");
-        }
-        System.out.println(r.row());
-        csv.write(r.csv());
-        csv.newLine();
+        problems.put(e.getKey(), problem);
+        trials.put(e.getKey(), LadderBench.trial(e.getValue(), w));
+        anyFailed |= problem != null;
       }
+      final int fReps = reps;
+      timeAndWrite("ladder", problems, trials, new LinkedHashMap<>(), w.n, w.seed, warmup, reps,
+          alloc, 1, w.n, (name, why) -> LadderBench.failed("ladder", name, w, fReps, why), csv);
     }
 
     // Ladder v2 counter report: doc 05 §1 claims AVL does MORE rotations than Red-Black
@@ -227,6 +228,37 @@ public final class Main {
         : "RESULT: all candidates validated against the oracle and timed OK");
     if (anyFailed) {
       System.exit(1);
+    }
+  }
+
+  /**
+   * Times every verified candidate TOGETHER, round-robin ({@link Interleaved} — fairness
+   * rule 3b), then prints and appends one row per candidate in declaration order: the
+   * timed row, or a FAIL row for a candidate that failed its gate (never timed).
+   */
+  private static void timeAndWrite(String bench, Map<String, String> problems,
+      Map<String, Interleaved.Trial> trials, Map<String, String> notes, int n, long seed,
+      int warmup, int reps, AllocCounter alloc, int perRun, double allocDen,
+      BiFunction<String, String, BenchResult> failed, BufferedWriter csv) throws IOException {
+    List<String> names = new ArrayList<>();
+    List<Interleaved.Trial> ok = new ArrayList<>();
+    List<String> okNotes = new ArrayList<>();
+    for (Map.Entry<String, String> e : problems.entrySet()) {
+      if (e.getValue() == null) {
+        names.add(e.getKey());
+        ok.add(trials.get(e.getKey()));
+        okNotes.add(notes.getOrDefault(e.getKey(), ""));
+      }
+    }
+    BenchResult[] timed = Interleaved.measure(bench, names.toArray(new String[0]),
+        ok.toArray(new Interleaved.Trial[0]), okNotes.toArray(new String[0]), n, seed, warmup,
+        reps, alloc, perRun, allocDen);
+    int t = 0;
+    for (Map.Entry<String, String> e : problems.entrySet()) {
+      BenchResult r = e.getValue() == null ? timed[t++] : failed.apply(e.getKey(), e.getValue());
+      System.out.println(r.row());
+      csv.write(r.csv());
+      csv.newLine();
     }
   }
 
@@ -319,21 +351,26 @@ public final class Main {
         csv.write(BenchResult.csvHeader());
         csv.newLine();
       }
+      int perRep = ArbitrageBench.scansPerRep(w);
+      int warmupRounds = ArbitrageBench.warmupRounds(w, warmup);
+      System.out.println("timing: " + perRep + " scans/rep, " + warmupRounds
+          + " interleaved warmup rounds (>= " + ArbitrageBench.MIN_WARMUP_SCANS
+          + " scans/candidate); timed unit = build + detect (reconstruction untimed)");
+      Map<String, String> problems = new LinkedHashMap<>();
+      Map<String, Interleaved.Trial> trials = new LinkedHashMap<>();
+      Map<String, String> notes = new LinkedHashMap<>();
       for (Map.Entry<String, ArbitrageBench.Factory> e : candidates.entrySet()) {
-        String name = e.getKey();
         GraphOps probe = e.getValue().create();
         String problem = ArbitrageBench.verify(probe, w, referenceHasCycle);
-        BenchResult r;
-        if (problem != null) {
-          anyFailed = true;
-          r = ArbitrageBench.failed("arbitrage", name, w, reps, problem);
-        } else {
-          r = ArbitrageBench.timed("arbitrage", name, e.getValue(), w, warmup, reps, alloc);
-        }
-        System.out.println(r.row());
-        csv.write(r.csv());
-        csv.newLine();
+        problems.put(e.getKey(), problem);
+        trials.put(e.getKey(), ArbitrageBench.trial(e.getValue(), w, perRep));
+        notes.put(e.getKey(), w.label);
+        anyFailed |= problem != null;
       }
+      final int fReps = reps;
+      timeAndWrite("arbitrage", problems, trials, notes, w.edgeFrom.length, w.seed,
+          warmupRounds, reps, alloc, perRep, Math.max(1, w.edgeFrom.length),
+          (name, why) -> ArbitrageBench.failed("arbitrage", name, w, fReps, why), csv);
     }
 
     System.out.println();
@@ -407,20 +444,17 @@ public final class Main {
         csv.write(BenchResult.csvHeader());
         csv.newLine();
       }
+      Map<String, String> problems = new LinkedHashMap<>();
+      Map<String, Interleaved.Trial> trials = new LinkedHashMap<>();
       for (Map.Entry<String, QueueBench.Factory> e : candidates.entrySet()) {
-        String name = e.getKey();
         String problem = QueueBench.verify(e.getValue().create(), w, oracleChecksum, oracleState);
-        BenchResult r;
-        if (problem != null) {
-          anyFailed = true;
-          r = QueueBench.failed("queue", name, w, reps, problem);
-        } else {
-          r = QueueBench.timed("queue", name, e.getValue(), w, warmup, reps, alloc, "");
-        }
-        System.out.println(r.row());
-        csv.write(r.csv());
-        csv.newLine();
+        problems.put(e.getKey(), problem);
+        trials.put(e.getKey(), QueueBench.trial(e.getValue(), w));
+        anyFailed |= problem != null;
       }
+      final int fReps = reps;
+      timeAndWrite("queue", problems, trials, new LinkedHashMap<>(), w.n, w.seed, warmup, reps,
+          alloc, 1, w.n, (name, why) -> QueueBench.failed("queue", name, w, fReps, why), csv);
     }
 
     System.out.println();
@@ -496,6 +530,9 @@ public final class Main {
         csv.write(BenchResult.csvHeader());
         csv.newLine();
       }
+      Map<String, String> problems = new LinkedHashMap<>();
+      Map<String, Interleaved.Trial> trials = new LinkedHashMap<>();
+      Map<String, String> notes = new LinkedHashMap<>();
       for (Map.Entry<String, CacheBench.Factory> e : candidates.entrySet()) {
         String name = e.getKey();
         CacheOps probe = e.getValue().create();
@@ -507,18 +544,14 @@ public final class Main {
             problem = CacheBench.verifyUnboundedResidency(probe, w);
           }
         }
-        BenchResult r;
-        if (problem != null) {
-          anyFailed = true;
-          r = CacheBench.failed("cache", name, w, reps, problem);
-        } else {
-          String note = "finalSize=" + probe.size() + " capacity=" + capacity;
-          r = CacheBench.timed("cache", name, e.getValue(), w, warmup, reps, alloc, note);
-        }
-        System.out.println(r.row());
-        csv.write(r.csv());
-        csv.newLine();
+        problems.put(name, problem);
+        trials.put(name, CacheBench.trial(e.getValue(), w));
+        notes.put(name, "finalSize=" + probe.size() + " capacity=" + capacity);
+        anyFailed |= problem != null;
       }
+      final int fReps = reps;
+      timeAndWrite("cache", problems, trials, notes, w.n, w.seed, warmup, reps, alloc, 1, w.n,
+          (name, why) -> CacheBench.failed("cache", name, w, fReps, why), csv);
     }
 
     System.out.println();
@@ -587,21 +620,20 @@ public final class Main {
       exactCandidates.put("tst", TstTicker::new);
       exactCandidates.put("trie", TrieTicker::new);
 
+      final int fReps = reps;
+      Map<String, String> exactProblems = new LinkedHashMap<>();
+      Map<String, Interleaved.Trial> exactTrials = new LinkedHashMap<>();
+      Map<String, String> exactNotes = new LinkedHashMap<>();
       for (Map.Entry<String, TickerBench.Factory> e : exactCandidates.entrySet()) {
-        String name = e.getKey();
         String problem = TickerBench.verify(e.getValue().create(), exactW, exactChecksum);
-        BenchResult r;
-        if (problem != null) {
-          anyFailed = true;
-          r = TickerBench.failed("ticker", name, exactW, reps, problem);
-        } else {
-          r = TickerBench.timed("ticker", name, e.getValue(), exactW, warmup, reps, alloc,
-              "mode=exact");
-        }
-        System.out.println(r.row());
-        csv.write(r.csv());
-        csv.newLine();
+        exactProblems.put(e.getKey(), problem);
+        exactTrials.put(e.getKey(), TickerBench.trial(e.getValue(), exactW));
+        exactNotes.put(e.getKey(), "mode=exact");
+        anyFailed |= problem != null;
       }
+      timeAndWrite("ticker", exactProblems, exactTrials, exactNotes, exactW.n, exactW.seed,
+          warmup, reps, alloc, 1, exactW.n,
+          (name, why) -> TickerBench.failed("ticker", name, exactW, fReps, why), csv);
 
       // ---- Phase 2: prefix workload — autocomplete is the reason this subsystem exists.
       // hash-set is ATTEMPTED here, not pre-excluded: its structural refusal surfaces as an
@@ -624,36 +656,35 @@ public final class Main {
       prefixCandidates.put("tst", TstTicker::new);
       prefixCandidates.put("trie", TrieTicker::new);
 
+      Map<String, String> prefixProblems = new LinkedHashMap<>();
+      Map<String, Interleaved.Trial> prefixTrials = new LinkedHashMap<>();
+      Map<String, String> prefixNotes = new LinkedHashMap<>();
+      List<String> unsupportedNames = new ArrayList<>();
       for (Map.Entry<String, TickerBench.Factory> e : prefixCandidates.entrySet()) {
         String name = e.getKey();
         String problem = null;
-        boolean unsupported = false;
         try {
           problem = TickerBench.verify(e.getValue().create(), prefixW, prefixChecksum);
         } catch (UnsupportedOperationException structural) {
-          unsupported = true;
+          unsupportedNames.add(name); // reported as an explicit N/A row below, never timed
+          continue;
         } catch (RuntimeException ex) {
           problem = "threw " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
         }
-        if (unsupported) {
-          System.out.println(String.format("%-16s %10s %12s %12s %9s %10s %6s  %s",
-              name, "-", "-", "-", "-", "-", "N/A",
-              "prefixSearch structurally unsupported (hash set: no prefix ordering exists)"));
-          csv.write("ticker," + name + "," + n + "," + fSeed + "," + reps
-              + ",na,0,0,0,0,0,-1,mode=prefix prefixSearch structurally unsupported");
-          csv.newLine();
-          continue;
-        }
-        BenchResult r;
-        if (problem != null) {
-          anyFailed = true;
-          r = TickerBench.failed("ticker", name, prefixW, reps, problem);
-        } else {
-          r = TickerBench.timed("ticker", name, e.getValue(), prefixW, warmup, reps, alloc,
-              "mode=prefix");
-        }
-        System.out.println(r.row());
-        csv.write(r.csv());
+        prefixProblems.put(name, problem);
+        prefixTrials.put(name, TickerBench.trial(e.getValue(), prefixW));
+        prefixNotes.put(name, "mode=prefix");
+        anyFailed |= problem != null;
+      }
+      timeAndWrite("ticker", prefixProblems, prefixTrials, prefixNotes, prefixW.n, prefixW.seed,
+          warmup, reps, alloc, 1, prefixW.n,
+          (name, why) -> TickerBench.failed("ticker", name, prefixW, fReps, why), csv);
+      for (String name : unsupportedNames) {
+        System.out.println(String.format("%-16s %10s %12s %12s %9s %10s %6s  %s",
+            name, "-", "-", "-", "-", "-", "N/A",
+            "prefixSearch structurally unsupported (hash set: no prefix ordering exists)"));
+        csv.write("ticker," + name + "," + n + "," + fSeed + "," + reps
+            + ",na,0,0,0,0,0,-1,mode=prefix prefixSearch structurally unsupported");
         csv.newLine();
       }
     }

@@ -39,10 +39,12 @@ public final class BenchResult {
   }
 
   public String row() {
-    return String.format("%-16s %10.2f %12.0f %12s %9.2f %10.2f %6s  %s",
-        structure, medianMs, opsPerSec,
+    // sub-millisecond rows (per-scan arbitrage timings) need more digits to be readable
+    String msFmt = medianMs < 1.0 ? "%.4f" : "%.2f";
+    return String.format("%-16s %10s %12.0f %12s %9s %10.2f %6s  %s",
+        structure, String.format(msFmt, medianMs), opsPerSec,
         allocBytesPerOp < 0 ? "n/a" : String.format("%.1f", allocBytesPerOp),
-        minMs, spreadPct, valid ? "OK" : "FAIL", note);
+        String.format(msFmt, minMs), spreadPct, valid ? "OK" : "FAIL", note);
   }
 
   public static String csvHeader() {
@@ -50,7 +52,7 @@ public final class BenchResult {
   }
 
   public String csv() {
-    return String.format("%s,%s,%d,%d,%d,%s,%.3f,%.3f,%.3f,%.0f,%.2f,%.1f,%s",
+    return String.format("%s,%s,%d,%d,%d,%s,%.6f,%.6f,%.6f,%.0f,%.2f,%.1f,%s",
         bench, structure, n, seed, reps, valid ? "ok" : "FAIL",
         minMs, medianMs, maxMs, opsPerSec, spreadPct, allocBytesPerOp, note);
   }

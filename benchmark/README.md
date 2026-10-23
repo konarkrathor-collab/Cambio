@@ -28,7 +28,17 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 2. **Correctness gate** — every candidate must match the oracle on (a) an accumulated
    checksum over all query results and (b) the final `(tick -> volume)` state.
 3. **JIT discipline** — N warmup replays are run and discarded before measurement
-   (Java JIT needs thousands of iterations to reach steady state).
+   (Java JIT needs thousands of iterations to reach steady state). Arbitrage scans take
+   microseconds, so that bench batches scans per timed rep and warms each candidate for
+   ≥ 2,000 scans; its timed unit is build + detect (cycle reconstruction is verification-only).
+3b. **Interleaved timing** — warmup and timed reps run round-robin across ALL verified
+   candidates of a bench (rotating start, `core/Interleaved.java`), never one candidate's
+   reps back-to-back. Sequential timing let JIT/profile state from earlier candidates leak
+   into later ones (Johnson — pure Bellman-Ford delegate — once timed 2–3× faster than
+   Bellman-Ford purely from running later; see `results/RESULTS.md` Run 12).
+3c. **Cross-machine caveat** — timing gaps under ~15–20% have flipped between machines;
+   treat them as ties unless they reproduce across seeds and runs. Checksums, op counts,
+   ratios and rotation counts are exact and machine-independent.
 4. **Reporting** — median of R timed full-replay runs + min/max spread % (the spread IS the
    empirical "Determinism" data point for the rationale doc). `System.gc()` between runs.
 5. **Memory** — bytes-allocated-per-operation via the JVM's per-thread allocation counters

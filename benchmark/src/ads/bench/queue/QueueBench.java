@@ -1,8 +1,7 @@
 package ads.bench.queue;
 
-import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
-import ads.bench.core.Stats;
+import ads.bench.core.Interleaved;
 
 import java.util.Map;
 import java.util.TreeMap;
@@ -12,7 +11,8 @@ import java.util.TreeMap;
  * the oracle and compare an accumulated query checksum — every dequeue/peek return value
  * and every cancel result is mixed in, which is how FIFO ORDER itself is validated — plus
  * the final (id -> volume) state and size; (2) warmup replays, discarded (JIT steady
- * state); (3) timed full replays -> median + min/max spread; (4) thread-allocation
+ * state); (3) timed full replays, interleaved round-robin with the other candidates
+ * ({@link Interleaved}) -> median + min/max spread; (4) thread-allocation
  * measurement. A candidate failing the gate is reported FAIL and never timed.
  */
 public final class QueueBench {
@@ -93,31 +93,19 @@ public final class QueueBench {
     return null;
   }
 
-  public static BenchResult timed(String bench, String name, Factory factory, QueueWorkload w,
-      int warmup, int reps, AllocCounter alloc, String note) {
-    for (int i = 0; i < warmup; i++) {
-      replay(factory.create(), w); // JIT warmup, discarded
-    }
-    long[] times = new long[reps];
-    for (int i = 0; i < reps; i++) {
-      System.gc();
-      QueueOps s = factory.create();
-      long t0 = System.nanoTime();
-      replay(s, w);
-      times[i] = System.nanoTime() - t0;
-    }
-    long allocDelta = -1;
-    if (alloc.isEnabled()) {
-      System.gc();
-      long a0 = alloc.bytes();
-      QueueOps s = factory.create(); // construction included (table pre-allocation must show)
-      replay(s, w);
-      allocDelta = alloc.bytes() - a0;
-    }
-    double median = Stats.median(times);
-    return new BenchResult(bench, name, w.n, w.seed, reps, true,
-        Stats.min(times) / 1e6, median / 1e6, Stats.max(times) / 1e6,
-        allocDelta < 0 ? -1.0 : (double) allocDelta / w.n, note);
+  /** Timed unit for {@link Interleaved}: fresh structure (untimed), then one full replay. */
+  public static Interleaved.Trial trial(Factory factory, QueueWorkload w) {
+    return new Interleaved.Trial() {
+      @Override
+      public Object setup() {
+        return factory.create();
+      }
+
+      @Override
+      public void run(Object s) {
+        replay((QueueOps) s, w);
+      }
+    };
   }
 
   public static BenchResult failed(String bench, String name, QueueWorkload w, int reps,

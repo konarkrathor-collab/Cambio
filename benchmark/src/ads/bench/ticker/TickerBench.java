@@ -1,8 +1,7 @@
 package ads.bench.ticker;
 
-import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
-import ads.bench.core.Stats;
+import ads.bench.core.Interleaved;
 
 /**
  * Phase 2+3 harness for the ticker bench, mirroring the other modules' discipline:
@@ -10,7 +9,8 @@ import ads.bench.core.Stats;
  * mixed directly, and prefix results are mixed as (count, order-INDEPENDENT XOR fold of the
  * returned strings), since candidates may legitimately return matches in different orders;
  * plus a final universe sweep (every roster ticker must be resident) and a size check;
- * (2) warmup reps discarded; (3) timed reps -> median + spread; (4) allocation per op.
+ * (2) warmup reps discarded; (3) timed reps -> median + spread (both
+ * interleaved round-robin across candidates — {@link Interleaved}); (4) allocation per op.
  *
  * <p>A candidate that structurally cannot implement part of the contract throws
  * UnsupportedOperationException — the caller (Main) reports that as an explicit N/A row,
@@ -88,31 +88,19 @@ public final class TickerBench {
     return null;
   }
 
-  public static BenchResult timed(String bench, String name, Factory factory, TickerWorkload w,
-      int warmup, int reps, AllocCounter alloc, String note) {
-    for (int i = 0; i < warmup; i++) {
-      replay(factory.create(), w); // JIT warmup, discarded
-    }
-    long[] times = new long[reps];
-    for (int i = 0; i < reps; i++) {
-      System.gc();
-      TickerOps s = factory.create();
-      long t0 = System.nanoTime();
-      replay(s, w);
-      times[i] = System.nanoTime() - t0;
-    }
-    long allocDelta = -1;
-    if (alloc.isEnabled()) {
-      System.gc();
-      long a0 = alloc.bytes();
-      TickerOps s = factory.create(); // construction included
-      replay(s, w);
-      allocDelta = alloc.bytes() - a0;
-    }
-    double median = Stats.median(times);
-    return new BenchResult(bench, name, w.n, w.seed, reps, true,
-        Stats.min(times) / 1e6, median / 1e6, Stats.max(times) / 1e6,
-        allocDelta < 0 ? -1.0 : (double) allocDelta / w.n, note);
+  /** Timed unit for {@link Interleaved}: fresh structure (untimed), then one full replay. */
+  public static Interleaved.Trial trial(Factory factory, TickerWorkload w) {
+    return new Interleaved.Trial() {
+      @Override
+      public Object setup() {
+        return factory.create();
+      }
+
+      @Override
+      public void run(Object s) {
+        replay((TickerOps) s, w);
+      }
+    };
   }
 
   public static BenchResult failed(String bench, String name, TickerWorkload w, int reps,

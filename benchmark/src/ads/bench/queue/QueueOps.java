@@ -9,8 +9,11 @@ package ads.bench.queue;
  * <p>Semantics (FROZEN; the oracle in {@link LinkedHashMapOracle} is the normative
  * reference):
  * <ul>
- *   <li>order ids are unique positive longs; each instance is created fresh for exactly
- *       one workload replay.</li>
+ *   <li>order ids are unique positive longs, assigned in strictly INCREASING arrival order
+ *       (as an exchange sequencer assigns them — {@link QueueWorkload} uses
+ *       {@code nextId++}); each instance is created fresh for exactly one workload
+ *       replay. A candidate may rely on this: the oldest live order is the smallest live
+ *       id.</li>
  *   <li>{@code enqueue(orderId, volume)}: append a new order at the TAIL (arrival order).</li>
  *   <li>{@code dequeueHead()}: remove and return the id of the OLDEST live order (FIFO
  *       head), or -1 if the queue is empty.</li>
