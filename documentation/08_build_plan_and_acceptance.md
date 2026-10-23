@@ -100,7 +100,7 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 ### Stage 1 — Matching engine, services, command-line demo
 
 **Build.**
-- `Order`, `PriceLevel`, `OrderBook` (one per pair: bid ladder + ask ladder + shared order index), `MatchingEngine`, `Trade`. Rules are fixed in **Appendix A**; do not improvise them.
+- `Order`, `PriceLevel`, `OrderBook` (one per pair: bid ladder + ask ladder), **one engine-wide `OrderIndex`** (order ids are global and `DELETE /api/orders/{id}` carries no pair, so cancel must find the order from the id alone; each order records its pair and side so an emptied level is removed from the right ladder), `MatchingEngine`, `Trade`. Per-pair book lookup is on the hot path, so key it by a small integer pair id from the Directory trie into an array, not a `java.util` map. All changes to an order's `remaining` must go through one `PriceLevel` method that also updates the level's volume, so the volume invariant cannot drift. Rules are fixed in **Appendix A**; do not improvise them.
 - **Scanner:** rate store, graph construction (edge `u→v` weight `-ln(rate)`), cross-rates derived through USD in Java, Bellman-Ford scan, minimum-profit threshold (default 0.001%) so floating-point noise is never reported as arbitrage, result = cycle + multiplier + profit %.
 - **Directory:** Trie seeded with the 12-currency, 132-pair universe used in the ticker benchmark; `contains`, `prefixSearch`.
 - **Vault:** hash + LRU account cache backed by a flat file (`backend/data/accounts.jsonl`, written atomically); accounts survive a restart.
@@ -143,7 +143,7 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 | `GET /api/stream` | **SSE**: `BOOK_UPDATE`, `TRADE`, `LOOPHOLE_ALERT`, `RATE_TICK` |
 | `GET /api/health` | Liveness |
 
-Errors use one shape: `{"error":{"code":"…","message":"…"}}` with correct HTTP codes (400 bad input, 404 unknown id, 409 conflict). CORS allows the Vite dev origin. The builder writes **`documentation/09_api_contract.md`** with every endpoint, request/response example and error code.
+Errors use one shape: `{"error":{"code":"…","message":"…"}}` with correct HTTP codes (400 bad input, 404 unknown id, 409 conflict). CORS allows the Vite dev origin. Pair strings are case-sensitive in the Directory (the Stage 0 trie rejects characters outside `A–Z` and `/`), so handlers **upper-case pair input at the API boundary** before any lookup. The builder writes **`documentation/09_api_contract.md`** with every endpoint, request/response example and error code.
 
 **Gate.** `backend/scripts/smoke.sh` exercises every endpoint with `curl`; the SSE stream shows events while orders are placed; malformed JSON returns 400 and the server keeps running. The supervisor reviews and **freezes** the contract — Stage 5 may not start before this.
 
