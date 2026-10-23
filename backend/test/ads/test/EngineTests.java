@@ -50,6 +50,12 @@ final class EngineTests {
     r.check("partial fill: resting order keeps the rest, level volume follows",
         EngineTests::partialFill);
     r.check("FIFO within a level", EngineTests::fifo);
+    r.check("B14: a resting order whose balance cannot absorb a fill is withdrawn; matching"
+        + " goes on; cash is conserved; no exception", EngineTests::overflowMaker);
+    r.check("B14: a SELL whose proceeds could overflow its cash is rejected MARGIN",
+        EngineTests::overflowTaker);
+    r.check("B14: Vault.settle is atomic: an overflow changes neither balance",
+        EngineTests::settleAtomic);
     r.check("trade executes at the resting price (price improvement for the taker)",
         EngineTests::restingPrice);
     r.check("market order sweeps several levels; emptied levels leave the ladder",
@@ -336,6 +342,92 @@ final class EngineTests {
         expect(resting != null && resting.remaining() == 6, "resting sell should keep 6"),
         expect(f.book().bestAsk().totalVolume() == 6, "level volume should be 6"),
         f.invariants());
+  }
+
+  private static java.math.BigInteger totalCash(Vault v) {
+    java.math.BigInteger sum = java.math.BigInteger.ZERO;
+    for (int i = 0; i < v.size(); i++) sum = sum.add(java.math.BigInteger.valueOf(v.accountAt(i).cash()));
+    return sum;
+  }
+
+  /**
+   * Trader 9 rests two sells of 10 just below 10^9 ticks with cash MAX - 10^10: each passes
+   * the taker check on its own. The first fill takes the cash to 10 below Long.MAX_VALUE; the
+   * second fill could not be paid without overflow, so that order must be withdrawn.
+   */
+  private static Fixture richSeller() {
+    Fixture f = new Fixture();
+    f.vault.open(9, Long.MAX_VALUE - 10_000_000_000L, 100_000_000_000L);
+    for (long t = 5; t <= 7; t++) f.vault.open(t, 20_000_000_000L, 20_000_000_000L);
+    return f;
+  }
+
+  private static TestRunner.Result overflowMaker() {
+    long top = MatchingEngine.MAX_PRICE_TICK;
+    long px = top - 1; // the rich seller's price; a payable seller waits behind at top
+    Fixture f = richSeller();
+    java.math.BigInteger before = totalCash(f.vault);
+    OrderResult a = f.limit(9, Side.SELL, px, 10);
+    OrderResult b = f.limit(9, Side.SELL, px, 10);
+    OrderResult behind = f.limit(7, Side.SELL, top, 5);
+    OrderResult first = f.limit(5, Side.BUY, px, 10); // fills a: seller 10 below MAX
+    OrderResult second = f.limit(6, Side.BUY, top, 10); // b cannot be paid: withdrawn; 5 from behind
+    java.math.BigInteger after = totalCash(f.vault);
+
+    Fixture g = richSeller();
+    g.limit(9, Side.SELL, px, 10);
+    g.limit(9, Side.SELL, px, 10);
+    g.limit(5, Side.BUY, px, 10);
+    OrderResult mkt = g.market(6, Side.BUY, 10); // meets only the unpayable order
+    return all(
+        expect(a.status() == OrderStatus.QUEUED && b.status() == OrderStatus.QUEUED, "both sells should rest"),
+        expect(first.status() == OrderStatus.FILLED, "the first buy fills"),
+        expect(f.vault.account(9).cash() == Long.MAX_VALUE - 10, "seller 10 below Long.MAX_VALUE"),
+        expect(second.status() == OrderStatus.PARTIAL && second.tradeCount() == 1,
+            "second buy: skips the unpayable order, fills 5 behind it, rests 5; got " + second.status()
+                + " with " + second.tradeCount() + " trades"),
+        trade(second, 0, top, 5, second.orderId(), behind.orderId()),
+        expect(f.eng.order(b.orderId()) == null, "the unpayable resting order should be withdrawn"),
+        expect(f.book().bestAsk() == null && f.book().bestBid().totalVolume() == 5, "no ask left; 5 bid"),
+        expect(after.equals(before), "cash not conserved: " + before + " -> " + after),
+        expect(mkt.status() == OrderStatus.REJECTED && mkt.rejectReason() == RejectReason.NO_LIQUIDITY,
+            "a market order that met only an unpayable order: REJECTED NO_LIQUIDITY, got " + mkt.status()),
+        expect(g.book().bestAsk() == null, "the unpayable order is gone from the book"),
+        f.invariants(),
+        g.invariants());
+  }
+
+  private static TestRunner.Result overflowTaker() {
+    Fixture f = new Fixture();
+    f.vault.open(9, Long.MAX_VALUE - 1_000, 1_000_000_000);
+    f.limit(1, Side.BUY, 100, 10);
+    OrderResult sell = f.limit(9, Side.SELL, 100, 10);
+    OrderResult msell = f.market(9, Side.SELL, 10);
+    return all(
+        expect(sell.status() == OrderStatus.REJECTED && sell.rejectReason() == RejectReason.MARGIN,
+            "limit sell: want REJECTED MARGIN, got " + sell.status() + " " + sell.rejectReason()),
+        expect(msell.status() == OrderStatus.REJECTED && msell.rejectReason() == RejectReason.MARGIN,
+            "market sell: want REJECTED MARGIN, got " + msell.status() + " " + msell.rejectReason()),
+        expect(f.book().bestBid().totalVolume() == 10, "the bid is untouched"),
+        f.invariants());
+  }
+
+  private static TestRunner.Result settleAtomic() {
+    Vault v = Vault.inMemory();
+    ads.vault.Account buyer = v.open(1, 5_000, 5_000);
+    ads.vault.Account seller = v.open(2, Long.MAX_VALUE - 10, 5_000);
+    boolean threw = false;
+    try {
+      v.settle(buyer, seller, 100);
+    } catch (ArithmeticException expected) {
+      threw = true;
+    }
+    return all(
+        expect(!ads.vault.Vault.canSettle(buyer, seller, 100), "canSettle should say no"),
+        expect(ads.vault.Vault.canSettle(buyer, seller, 10), "10 fits exactly"),
+        expect(threw, "settle should throw on overflow"),
+        expect(buyer.cash() == 5_000 && seller.cash() == Long.MAX_VALUE - 10,
+            "a failed settle must change neither balance: " + buyer.cash() + " / " + seller.cash()));
   }
 
   private static TestRunner.Result fifo() {

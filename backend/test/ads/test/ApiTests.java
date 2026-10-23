@@ -59,6 +59,8 @@ final class ApiTests {
     r.check("a replayed capture is labelled replay=true in the status", ApiTests::replayFlag);
     r.check("addendum 1: quotes older than 30 s leave the scan (excluded edges counted)",
         ApiTests::staleEdgesLeaveScan);
+    r.check("drill 2: a dead feed's loophole clears at the expiry instant (30 s + 1 ms), not a sweep"
+        + " later", ApiTests::clearsAtExpiry);
     r.check("addendum 1: a dead feed's alert goes away with no new payload (sweep re-scan)",
         ApiTests::deadFeedAlertEnds);
     r.check("addendum 1: live and fallback rates never meet in one graph; heartbeats keep"
@@ -427,7 +429,38 @@ final class ApiTests {
     if (Boolean.TRUE.equals(st.get("lastScanFoundCycle")) || h.market.scanCount() != scans + 1) {
       return TestRunner.Result.fail("alert survived a dead feed: " + st);
     }
-    return TestRunner.Result.pass("one sweep re-scan, ~1 s after the quotes expired");
+    return TestRunner.Result.pass("one re-scan as the quotes expired");
+  }
+
+  /** Drill 2: the alert of a dead feed ends at the expiry instant itself, not a sweep later. */
+  private static TestRunner.Result clearsAtExpiry() throws Exception {
+    Harness h = new Harness();
+    h.ticks("OANDA:EUR_USD", 1.08, "OANDA:GBP_USD", 1.30, "OANDA:EUR_GBP", CROSS * 1.004);
+    long scans = h.market.scanCount();
+    h.advance(MarketService.STALE_AFTER_MS); // the quotes are still usable at exactly 30 s
+    if (!Boolean.TRUE.equals(h.status().get("lastScanFoundCycle"))) {
+      return TestRunner.Result.fail("cleared before the quotes expired");
+    }
+    h.advance(1); // 30 s + 1 ms: expired
+    Map<String, Object> st = h.status();
+    if (Boolean.TRUE.equals(st.get("lastScanFoundCycle")) || h.market.scanCount() != scans + 1) {
+      return TestRunner.Result.fail("not cleared 1 ms after expiry: " + st);
+    }
+    // a fresh tick before expiry moves the timer: no early re-scan
+    h.ticks("OANDA:EUR_USD", 1.08, "OANDA:GBP_USD", 1.30, "OANDA:EUR_GBP", CROSS * 1.004);
+    long s2 = h.market.scanCount();
+    h.advance(20_000);
+    h.ticks("OANDA:EUR_USD", 1.08, "OANDA:GBP_USD", 1.30, "OANDA:EUR_GBP", CROSS * 1.004);
+    h.advance(1_000); // past the throttled trailing scan of that tick
+    long s3 = h.market.scanCount();
+    h.advance(28_000); // 29 s after the refresh: the first set's expiry (30 s after it) has passed
+    if (h.market.scanCount() != s3 || !Boolean.TRUE.equals(h.status().get("lastScanFoundCycle"))) {
+      return TestRunner.Result.fail("re-scanned at the superseded expiry");
+    }
+    h.advance(1_001);
+    return Boolean.TRUE.equals(h.status().get("lastScanFoundCycle")) || s2 < 1
+        ? TestRunner.Result.fail("second expiry missed")
+        : TestRunner.Result.pass("cleared 1 ms after the 30 s validity; a refreshed quote moves the timer");
   }
 
   private static TestRunner.Result sourcesNeverMix() throws Exception {

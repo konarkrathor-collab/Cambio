@@ -91,16 +91,25 @@ public final class MatchingEngine {
         Order maker = best.head();
         if (maker == null) break;
         long q = Math.min(remaining, maker.remaining);
-        Trade t = buy
-            ? new Trade(nextTradeId++, now, pairId, best.price, q, orderId, maker.orderId,
-                traderId, maker.traderId, side)
-            : new Trade(nextTradeId++, now, pairId, best.price, q, maker.orderId, orderId,
-                maker.traderId, traderId, side);
         Account makerAccount = vault.account(maker.traderId);
         if (makerAccount == null) {
           throw new IllegalStateException("resting order " + maker.orderId
               + " has no account " + maker.traderId);
         }
+        if (!Vault.canSettle(buy ? account : makerAccount, buy ? makerAccount : account,
+            best.price * q)) {
+          // the resting order's balance cannot absorb this fill without leaving the range of
+          // a long: it is withdrawn from the book, the fill does not happen (B14); the
+          // taker's own side was checked by validate()
+          index.remove(maker.orderId);
+          best.unlink(maker);
+          continue;
+        }
+        Trade t = buy
+            ? new Trade(nextTradeId++, now, pairId, best.price, q, orderId, maker.orderId,
+                traderId, maker.traderId, side)
+            : new Trade(nextTradeId++, now, pairId, best.price, q, maker.orderId, orderId,
+                maker.traderId, traderId, side);
         vault.settle(buy ? account : makerAccount, buy ? makerAccount : account, t.notional());
         if (tradeCount == tradeBuf.length) {
           Trade[] grown = new Trade[tradeBuf.length * 2];
@@ -127,7 +136,9 @@ public final class MatchingEngine {
       return new OrderResult(orderId, OrderStatus.FILLED, null, filled, 0, trades);
     }
     if (type == OrderType.MARKET) {
-      // liquidity existed at the margin check, so at least one fill happened
+      // liquidity existed at the margin check; it can only have vanished if every resting
+      // order it met was withdrawn (B14), and then nothing traded
+      if (filled == 0) return reject(orderId, RejectReason.NO_LIQUIDITY);
       return new OrderResult(orderId, OrderStatus.PARTIAL, null, filled, 0, trades);
     }
     Order resting = new Order(orderId, pairId, side, traderId, priceTick, remaining, now);
@@ -187,7 +198,11 @@ public final class MatchingEngine {
     }
     long allowed = side == Side.BUY ? Math.min(account.cash(), account.marginLimit())
         : account.marginLimit();
-    return exposure <= allowed;
+    if (exposure > allowed) return false;
+    // a SELL's proceeds are at most quantity x MAX_PRICE_TICK (<= 10^18): a balance so large
+    // that they would overflow it cannot take the trade (B14); a BUY's cost cannot underflow,
+    // since its cash covers the exposure at the moment it is checked
+    return side == Side.BUY || account.cash() <= Long.MAX_VALUE - quantity * MAX_PRICE_TICK;
   }
 
   private OrderResult reject(long orderId, RejectReason reason) {

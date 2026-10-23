@@ -217,6 +217,58 @@ With shallow books the baseline wins or ties; with deep books the engine stays n
 
 ---
 
+## B13: After a crash, balances could include trades the archive did not have; the Logbook's loss window was unbounded in time (Stage 6, drill 1)
+
+**What broke.** Drill 1 (`scripts/drill_kill9.sh`) traded, waited, traded again and ran `kill -9` 1 s later. After the restart the accounts held the last burst's balances, but the archive lacked its 10 trades. The cause: the Vault flushed every 2 s, while the Logbook wrote a segment only every 500 trades. So a balance on disk could include trades no archive would ever show, and a quiet session could lose all its trades, however old. The Stage 6 spec asked for the time bound. The inconsistency is the bug the drill found.
+
+**Fix.** Every Vault flush now writes the buffered trades as a segment first, so a balance on disk never includes a trade the archive lacks. A separate timer also writes any non-empty buffer at least every 5 s (`App.LOGBOOK_FLUSH_MS`, `Config.logbookFlushMs`). The crash-loss window is now the last 2 s of trades together with their balances, and 5 s at most for trades. **Tests:**
+
+- `Logbook loss window bounded by time…` snapshots the data directory 700 ms after 12 trades. With a 300 ms timer all 12 are archived; with no timer, none are.
+- `after a crash, persisted balances never include a trade the archive lacks (B13)` rebuilds every balance from the snapshot's archive.
+
+**Proof:** with the timer removed the first test fails (`0 of 12 trades`). With the Vault-flush ordering reverted the second fails (`10 accounts on disk disagree with start balances + archived trades`). The drill now checks that every balance after a restart equals its seed balance plus the archived trades.
+
+---
+
+## B14: A balance near the 64-bit limit made a fill throw: a 500, and money destroyed (Stage 6, drill 4)
+
+**What broke.** `POST /api/accounts` accepts any non-negative `cash` (contract §3.9), so an account can hold up to 9.2 × 10¹⁸. When such an account was the seller in a fill, `Vault.settle` debited the buyer, then hit `Math.addExact` overflow crediting the seller. The order got a 500, and the buyer's 1,085,000 vanished: the seller was never credited, no trade was recorded, and the resting order stayed. The fuzzer created such accounts but never traded them; a targeted probe found it.
+
+**Fix (engine only; the contract is unchanged):**
+1. `Vault.settle` computes both new balances before writing either, so it is atomic.
+2. A SELL whose proceeds (at most quantity × 10⁹ ticks) could overflow the seller's cash is rejected `MARGIN`. A BUY cannot underflow, because its cash covers the exposure when it is checked.
+3. A resting order whose account cannot absorb a fill without overflow is withdrawn from the book, and matching continues behind it. A MARKET order that met only such orders is `REJECTED NO_LIQUIDITY`.
+
+Three engine tests cover these. With the withdrawal disabled, the first fails with `ArithmeticException: long overflow`. The fuzzer now has a phase where six accounts near the limit trade 600 orders as makers and takers; cash is conserved. **For the supervisor:** the root cause is that balances are unbounded. Bounding `cash` and `marginLimit` (for example at 2⁵³, so JavaScript clients read them exactly) would be a contract change, so I have not made it.
+
+---
+
+## B15: An over-size upload often got "connection reset" instead of its 413 (Stage 6, drill 4)
+
+**What broke.** The fuzzer intermittently reported a request as dead: a 3 MB `POST`, retried on a fresh connection and failing again. The server stopped reading at 1 MB and answered 413. The JDK's `HttpExchange.close()` then drains only 64 KB and closes a socket that still has unread data, which resets the connection. A client still uploading (Python's http.client, curl, many SDKs) gets a write error and never reads the 413.
+
+**Fix.** After deciding on 413, `readBody` reads and discards the rest of the body, up to 16 MB (`MAX_DRAIN_BYTES`), before answering. Beyond that the connection is still cut, so an endless body cannot hold a thread. **Test:** `B15: a 3 MB body uploaded in pieces always gets its 413` uploads in 64 KB pieces, as a client does. Before the fix: `0 of 30 uploads got the 413 … Connection reset by peer`. After it: 30 of 30. The fuzzer passed 6 runs of the seed that failed 2 times in 6 before.
+
+---
+
+## B16: An event-stream client that stopped reading held a thread and a socket forever (Stage 6, drill 5)
+
+**What broke.** Drill 5's never-reading client was dropped by the hub as designed (`sseDropped` rose), but its connection never ended. The JDK HTTP server has no write timeout. The client's stream thread stayed blocked in a socket write, and the reaper's `exchange.close()` blocked on the same socket. The hub had removed the client from its count, so a client could open streams, stop reading and repeat, piling up stuck threads and sockets without limit. Peers that vanish without closing are only released by TCP's retransmission timeout; a live peer advertising a zero window never is.
+
+**Fix.** On a drop, the reaper closes the connection's socket channel directly, so the blocked write fails at once and the thread returns. The JDK offers no public way to do this. The hub reads the exchange's internal channel by reflection, which the JVM must allow with `--add-opens jdk.httpserver/sun.net.httpserver=ALL-UNNAMED`; `run.sh` and `test.sh` pass it. Without the flag the hub falls back to `close()` and logs one warning. **Test:** `B16: a dropped client that never reads is cut off at once` runs the hub on a real HTTP server, and a client that never reads gets 100 KB events until it is dropped. Before the fix the stream thread was still blocked 3 s later. After it, the thread is freed 4 ms after the drop. In the drill the client now sees the connection end.
+
+Note: the drop happens only once the kernel's socket buffers are full. On loopback that is about 4 MB, 23 s of events at 300 orders/s. The 256-event queue is the last buffer, not the first.
+
+---
+
+## B17: A dead feed's loophole cleared up to 1 s after its quotes expired, past the 30 s drill limit (Stage 6, drill 2)
+
+**What broke.** Drill 2 (`scripts/drill_feed.sh`) kills the feed and times the status and the scan at 0.25 s resolution. The status said `disconnected` at 15.0 s. The scan, though, still reported the loophole until **30.52 s** after the kill, failing "within 30 s". At 1 s polling this had looked like a pass at "30–31 s", which hid it. Live quotes are valid for 30 s (contract §3.7), but the re-scan after an expiry came from a sweep that runs once a second. It could therefore fire up to 1 s after the last quote stopped being usable.
+
+**Fix.** After every scan, the market service arms a one-shot timer for the exact instant the next quote expires (`ArbitrageScanner.nextExpiryAfter`) and re-scans then. A timer superseded by a newer quote does nothing. The 1 s sweep stays as a backstop. **Test:** `drill 2: a dead feed's loophole clears at the expiry instant (30 s + 1 ms), not a sweep later` checks that the cycle is still reported at exactly 30 s, gone 1 ms later, and that a refreshed quote moves the timer. With the timer disabled it fails (`not cleared 1 ms after expiry`). Re-run of the drill: the scan cleared at 29.82 s and 29.88 s after the kill (the last tick arrives just before it).
+
+---
+
 ## F1: The pair picker could choose the previous query's pair (Stage 5, frontend, found in a headless-browser run)
 
 **What broke.** The picker kept the last suggestions on screen while the next query's 150 ms debounce ran. Typing `eur/usd` and pressing Enter at once chose the first suggestion of the previous query, `USD/JPY`. A headless Chromium run of the golden path caught it: the demo then seeded the wrong pair.

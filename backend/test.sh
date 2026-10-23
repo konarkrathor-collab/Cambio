@@ -51,4 +51,4 @@ javac --release 17 -Xlint:all -Xlint:-options -Werror \
   -cp out/classes:../benchmark/out -d out/test-classes @out/test-sources.txt
 echo "Built $(wc -l < out/test-sources.txt | tr -d ' ') test source files -> out/test-classes/"
 
-exec java -cp out/classes:out/test-classes:../benchmark/out ads.test.TestRunner "$@"
+exec java --add-opens jdk.httpserver/sun.net.httpserver=ALL-UNNAMED -cp out/classes:out/test-classes:../benchmark/out ads.test.TestRunner "$@"

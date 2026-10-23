@@ -94,6 +94,27 @@ into `happy-dom`):
 - a replay of the recorded `/api/stream` transcript from contract §7 (read from the
   contract itself) through the reducers
 
+## Golden path in a real browser (regression tooling)
+
+`e2e/golden-path.mjs` drives the dashboard in headless Chromium through about 50 checks:
+
+- orders that cross, the cash they move, cancel, and every rejection;
+- the picker, seed flow, and an injected loophole that glows and then clears;
+- both simulator profiles and the 409;
+- the inspector, keyboard tabs, and the 1024 × 768 layout;
+- a clean console, `kill -9` of the backend and the recovery, and reduced motion.
+
+It starts its own backend (port 8080, temporary data) and dashboard server, so stop yours
+first. Playwright is deliberately **not** in `package.json`: install it once, anywhere Node
+can find it.
+
+```sh
+npm install -g playwright && npx playwright install chromium   # once
+node frontend/e2e/golden-path.mjs              # against npm run dev
+node frontend/e2e/golden-path.mjs --preview    # against the production build
+SHOTS=/tmp/shots node frontend/e2e/golden-path.mjs   # also save screenshots
+```
+
 ## Known behaviour
 
 - The application logs nothing to the browser console. On a fresh server the Simulator

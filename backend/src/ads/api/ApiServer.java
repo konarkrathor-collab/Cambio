@@ -43,6 +43,8 @@ import java.util.logging.Logger;
 public final class ApiServer {
   /** Request bodies above this are refused with 413. */
   public static final int MAX_BODY_BYTES = 1 << 20;
+  /** An over-size body is read and discarded up to this many bytes before the 413 (B15). */
+  public static final int MAX_DRAIN_BYTES = 16 << 20;
   public static final List<String> ALLOWED_ORIGINS =
       Collections.unmodifiableList(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
   private static final Logger LOG = Logger.getLogger(ApiServer.class.getName());
@@ -315,12 +317,22 @@ public final class ApiServer {
     }
   }
 
+  /**
+   * The request body, at most {@link #MAX_BODY_BYTES}. A larger body is refused with 413, but
+   * only after the rest of it (up to {@link #MAX_DRAIN_BYTES}) has been read and discarded:
+   * closing a connection with unread data resets it, and a client still uploading then sees
+   * "connection reset" instead of the 413 (B15). Beyond the drain limit the connection is
+   * cut, so an endless body cannot hold a thread.
+   */
   private static byte[] readBody(InputStream in) throws IOException, ApiException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     byte[] buf = new byte[8192];
     int n;
+    long seen = 0;
     while ((n = in.read(buf)) > 0) {
-      if (out.size() + n > MAX_BODY_BYTES) {
+      seen += n;
+      if (seen > MAX_BODY_BYTES) {
+        while (seen <= MAX_DRAIN_BYTES && (n = in.read(buf)) > 0) seen += n;
         throw new ApiException(413, "BODY_TOO_LARGE", "request body exceeds " + MAX_BODY_BYTES
             + " bytes");
       }

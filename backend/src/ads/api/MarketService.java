@@ -60,6 +60,8 @@ public final class MarketService {
   private String ratesSource; // the source of every rate currently in the store
   private long sourceSwitches;
   private long nextExpiry = Long.MAX_VALUE;
+  /** The expiry instant a one-shot re-scan timer is armed for (Long.MIN_VALUE: none). */
+  private long expiryTimerAt = Long.MIN_VALUE;
   private String lastSource;
   private boolean lastReplay;
   private long lastPayloadAt;
@@ -251,6 +253,7 @@ public final class MarketService {
     lastScan = scanner.scan(now);
     lastScanAt = now;
     nextExpiry = scanner.nextExpiryAfter(now);
+    armExpiryTimer(now);
     scanCount++;
     if (lastScan.hasArbitrage() != wasActive) { // newly found or lost: not every scan
       Map<String, Object> e = scanView();
@@ -317,8 +320,32 @@ public final class MarketService {
   }
 
   /**
-   * Every {@link #SWEEP_MS}: once some quote has expired since the last scan, scan again so
-   * stale edges leave the graph and an alert from a dead feed goes away.
+   * Re-scans at the exact instant the next quote expires, so a dead feed's loophole clears 30 s
+   * after its last tick rather than up to {@link #SWEEP_MS} later (Stage 6 drill 2). A timer
+   * whose instant is no longer the next expiry (a new tick extended it) does nothing.
+   */
+  private void armExpiryTimer(long now) {
+    if (nextExpiry == Long.MAX_VALUE || nextExpiry == expiryTimerAt) return;
+    long at = nextExpiry;
+    expiryTimerAt = at;
+    scheduler.schedule(() -> onExpiryTimer(at), Math.max(0, at - now));
+  }
+
+  private void onExpiryTimer(long at) {
+    if (expiryTimerAt != at) return; // superseded
+    long now = clock.getAsLong();
+    if (now < at) { // woke a little early: wait out the rest
+      scheduler.schedule(() -> onExpiryTimer(at), at - now);
+      return;
+    }
+    expiryTimerAt = Long.MIN_VALUE;
+    if (now >= nextExpiry) runScan();
+  }
+
+  /**
+   * Every {@link #SWEEP_MS}, a backstop for the expiry timer: once some quote has expired
+   * since the last scan, scan again so stale edges leave the graph and an alert from a dead
+   * feed goes away.
    */
   private void sweep() {
     if (clock.getAsLong() >= nextExpiry) {

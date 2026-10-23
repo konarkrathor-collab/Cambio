@@ -79,10 +79,29 @@ public final class Vault {
     return a;
   }
 
-  /** Settles one trade: {@code buyer.cash -= notional}, {@code seller.cash += notional}. */
+  /**
+   * True if {@link #settle} can move {@code notional} from buyer to seller without either
+   * balance leaving the range of a long. A self-trade (same account) nets to zero.
+   */
+  public static boolean canSettle(Account buyer, Account seller, long notional) {
+    if (buyer == seller) return true;
+    return buyer.cash >= Long.MIN_VALUE + notional && seller.cash <= Long.MAX_VALUE - notional;
+  }
+
+  /**
+   * Settles one trade: {@code buyer.cash -= notional}, {@code seller.cash += notional}.
+   * Atomic: both balances are computed before either is written, so an overflow
+   * (ArithmeticException) leaves both unchanged (B14). Callers check {@link #canSettle}.
+   */
   public void settle(Account buyer, Account seller, long notional) {
-    buyer.cash = Math.subtractExact(buyer.cash, notional);
-    seller.cash = Math.addExact(seller.cash, notional);
+    if (buyer == seller) {
+      dirty = true;
+      return;
+    }
+    long buyerCash = Math.subtractExact(buyer.cash, notional);
+    long sellerCash = Math.addExact(seller.cash, notional);
+    buyer.cash = buyerCash;
+    seller.cash = sellerCash;
     dirty = true;
   }
 

@@ -62,6 +62,8 @@ final class GatewayTests {
         () -> withApp(GatewayTests::sseSlowClient));
     r.check("SSE hub: a client whose socket blocks is dropped after a full queue; publish never"
         + " blocks", GatewayTests::hubDropsBlockedClient);
+    r.check("B16: a dropped client that never reads is cut off at once: its stream thread and"
+        + " socket are freed without its help", GatewayTests::droppedClientFreed);
     r.check("200 concurrent orders from 8 threads equal a serial replay of the same arrival"
         + " order", GatewayTests::concurrentEqualsSerial);
     r.check("accounts and the logbook survive a restart through the API",
@@ -71,6 +73,13 @@ final class GatewayTests {
     r.check("crash with no flush since the ids were issued (default reserve, and a reserve of 8"
         + " renewed as it runs out): the next session never repeats an id",
         GatewayTests::idsAfterCrash);
+    r.check("Logbook loss window bounded by time: a crash loses at most the last flush period"
+        + " (300 ms here, 5 s by default); without the timer the same crash loses every trade",
+        GatewayTests::logbookTimedFlush);
+    r.check("after a crash, persisted balances never include a trade the archive lacks (B13)",
+        GatewayTests::balancesMatchArchive);
+    r.check("B15: a 3 MB body uploaded in pieces always gets its 413 (30 tries), never a connection reset",
+        () -> withApp(GatewayTests::oversizedAlways413));
     r.check("GET /api/trades: newest first, pair filter, limit 1-500, ring of 500",
         () -> withApp(GatewayTests::recentTrades));
   }
@@ -125,6 +134,130 @@ final class GatewayTests {
       Map<?, ?> e = (Map<?, ?>) ((Map<?, ?>) Json.parse(r.body())).get("error");
       return r.statusCode() + " " + e.get("code");
     }
+  }
+
+  private static TestRunner.Result logbookTimedFlush() throws Exception {
+    check(App.LOGBOOK_FLUSH_MS == 5_000, "the default loss window is 5 s");
+    long[] timed = crashAfterTrades(300);
+    check(timed[1] == timed[0], "with a 300 ms timer, " + timed[1] + " of " + timed[0]
+        + " trades reached the archive before the crash");
+    long[] untimed = crashAfterTrades(3_600_000);
+    check(untimed[1] == 0, "control: without the timer the snapshot should hold no trades, got " + untimed[1]);
+    return TestRunner.Result.pass(timed[0] + " trades, 700 ms before the crash: " + timed[1]
+        + " archived with the timer, " + untimed[1] + " without");
+  }
+
+  private static TestRunner.Result balancesMatchArchive() throws Exception {
+    // the Logbook timer effectively off, the Vault flushing every 200 ms: before the fix the
+    // snapshot held the new balances and an empty archive
+    long[] r = crashAfterTrades(3_600_000, 200, true);
+    check(r[2] == 0, r[2] + " accounts on disk disagree with start balances + archived trades");
+    check(r[1] == r[0], r[1] + " of " + r[0] + " trades archived");
+    return TestRunner.Result.pass(r[0] + " trades; snapshot: " + r[1] + " archived, balances consistent");
+  }
+
+  private static long[] crashAfterTrades(long logbookFlushMs) throws Exception {
+    return crashAfterTrades(logbookFlushMs, 3_600_000, false);
+  }
+
+  /**
+   * {trades made, trades in the archive of a data-dir copy taken 700 ms later, and (if asked)
+   * the number of accounts in that copy whose cash differs from start + archived trades}.
+   */
+  private static long[] crashAfterTrades(long logbookFlushMs, long vaultFlushMs, boolean reconcile) throws Exception {
+    Path dir = Files.createTempDirectory("ads-gw-logflush-");
+    Path copy = Files.createTempDirectory("ads-gw-logflush-copy-");
+    App.Config cfg = new App.Config();
+    cfg.port = 0;
+    cfg.dataDir = dir;
+    cfg.seedDemoAccounts = true;
+    cfg.logbookFlushMs = logbookFlushMs;
+    cfg.flushIntervalMs = vaultFlushMs;
+    App app = App.start(cfg);
+    try {
+      Client c = new Client(app);
+      long trades = 0;
+      for (int i = 0; i < 12; i++) {
+        c.order(1 + i % 5, "EUR/USD", "SELL", "LIMIT", "1.08500", 2);
+        trades += ((List<?>) c.order(6 + i % 5, "EUR/USD", "BUY", "LIMIT", "1.08500", 2).get("trades")).size();
+      }
+      Thread.sleep(700);
+      try (Stream<Path> files = Files.walk(dir)) { // the crash: a snapshot, no shutdown
+        for (Path p : (Iterable<Path>) files::iterator) {
+          Path target = copy.resolve(dir.relativize(p).toString());
+          if (Files.isDirectory(p)) Files.createDirectories(target);
+          else Files.copy(p, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+      }
+      byte[] records = Logbook.readArchive(copy.resolve("logbook"));
+      long archived = 0;
+      for (byte b : records) if (b == '\n') archived++;
+      long mismatched = 0;
+      if (reconcile) {
+        // demo seed: traders 1-11 start with 5,000,000,000; trader 12 with 2,000,000
+        java.util.Map<Long, Long> cash = new java.util.HashMap<>();
+        for (long t = 1; t <= 12; t++) cash.put(t, t == 12 ? 2_000_000L : 5_000_000_000L);
+        for (String line : new String(records, StandardCharsets.US_ASCII).split("\n")) {
+          if (line.isEmpty()) continue;
+          String[] f = line.split(","); // id,seq,pair,priceTick,qty,buyOrder,sellOrder,buyer,seller,side
+          long notional = Long.parseLong(f[3]) * Long.parseLong(f[4]);
+          cash.merge(Long.parseLong(f[7]), -notional, Long::sum);
+          cash.merge(Long.parseLong(f[8]), notional, Long::sum);
+        }
+        ads.vault.Vault onDisk = new ads.vault.Vault(copy.resolve("accounts.jsonl"), 64);
+        for (long t = 1; t <= 12; t++) {
+          if (onDisk.account(t).cash() != cash.get(t)) mismatched++;
+        }
+      }
+      return new long[] { trades, archived, mismatched };
+    } finally {
+      app.stop();
+      deleteTree(dir);
+      deleteTree(copy);
+    }
+  }
+
+  private static TestRunner.Result oversizedAlways413(Client c) throws Exception {
+    byte[] big = new byte[3 * 1024 * 1024];
+    java.util.Arrays.fill(big, (byte) 'x');
+    int ok = 0;
+    String other = null;
+    for (int i = 0; i < 30; i++) {
+      // a fresh raw socket each time
+      try (Socket s = new Socket("127.0.0.1", c.app.port())) {
+        s.setSoTimeout(5_000);
+        OutputStream out = s.getOutputStream();
+        String head = "POST /api/orders HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+            + "Content-Length: " + big.length + "\r\n\r\n";
+        out.write(head.getBytes(StandardCharsets.US_ASCII));
+        try {
+          // in 64 KB pieces with short pauses, like a real upload: still sending when the
+          // server has seen enough to refuse it
+          for (int off = 0; off < big.length; off += 65_536) {
+            out.write(big, off, Math.min(65_536, big.length - off));
+            out.flush();
+            Thread.sleep(2);
+          }
+        } catch (java.io.IOException e) {
+          // the server reset the connection mid-upload: clients such as Python's http.client
+          // and curl report this error and never read the 413
+          other = "reset during the upload: " + e.getMessage();
+          continue;
+        }
+        BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.US_ASCII));
+        String status;
+        try {
+          status = in.readLine();
+        } catch (java.io.IOException e) {
+          status = "read failed: " + e.getMessage();
+        }
+        if (status != null && status.startsWith("HTTP/1.1 413")) ok++;
+        else other = String.valueOf(status);
+      }
+    }
+    check(ok == 30, ok + " of 30 uploads got the 413; last other outcome: " + other);
+    check(c.json("GET", "/api/health", null, 200).get("status").equals("ok"), "alive");
+    return TestRunner.Result.pass("30 of 30 three-megabyte uploads answered 413 BODY_TOO_LARGE");
   }
 
   /** startApp with a flush interval and, if positive, a counter reserve. */
@@ -552,6 +685,58 @@ final class GatewayTests {
     @Override public void setAttribute(String name, Object value) { }
     @Override public void setStreams(java.io.InputStream i, OutputStream o) { }
     @Override public com.sun.net.httpserver.HttpPrincipal getPrincipal() { return null; }
+  }
+
+  /**
+   * A real HTTP server whose only route is the hub. A client sends its request and never
+   * reads; 100 KB events fill the kernel buffers and then the client's queue, so the hub drops
+   * it. The handler thread must then return (and the socket close) within 3 s while the client
+   * still reads nothing.
+   */
+  private static TestRunner.Result droppedClientFreed() throws Exception {
+    SseHub hub = new SseHub();
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    java.util.concurrent.CountDownLatch returned = new java.util.concurrent.CountDownLatch(1);
+    server.createContext("/api/stream", ex -> {
+      try {
+        hub.serve(ex);
+      } catch (Exception e) {
+        // the stream ended
+      } finally {
+        returned.countDown();
+      }
+    });
+    ExecutorService pool = Executors.newCachedThreadPool();
+    server.setExecutor(pool);
+    server.start();
+    try (Socket s = new Socket("127.0.0.1", server.getAddress().getPort())) {
+      s.getOutputStream().write("GET /api/stream HTTP/1.1\r\nHost: x\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+      long deadline = System.currentTimeMillis() + 5_000;
+      while (hub.clientCount() == 0) {
+        check(System.currentTimeMillis() < deadline, "the stream never registered");
+        Thread.sleep(10);
+      }
+      java.util.Map<String, Object> big = new java.util.LinkedHashMap<>();
+      big.put("pad", "x".repeat(100_000));
+      int published = 0;
+      while (hub.droppedClients() == 0) {
+        check(published < 5_000, "never dropped after " + published + " events");
+        hub.publish("PAD", big);
+        published++;
+      }
+      long droppedAt = System.currentTimeMillis();
+      boolean freed = returned.await(3, TimeUnit.SECONDS); // the client has not read a byte
+      long ms = System.currentTimeMillis() - droppedAt;
+      check(freed, "the stream thread was still blocked 3 s after the drop (" + published
+          + " events published; the client never read)");
+      return TestRunner.Result.pass("dropped after " + published + " x 100 KB events; stream thread"
+          + " freed " + ms + " ms later, client still not reading");
+    } finally {
+      server.stop(0);
+      pool.shutdownNow();
+      hub.close();
+    }
   }
 
   private static TestRunner.Result hubDropsBlockedClient() throws Exception {

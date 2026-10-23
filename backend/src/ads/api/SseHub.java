@@ -24,7 +24,7 @@ import java.util.logging.Logger;
  * <p>The engine thread calls {@link #publish}: the event is formatted once
  * ({@code id:}, {@code event:}, {@code data:}) and OFFERED to every client's bounded queue,
  * which never blocks. A client whose queue is full (slow, or not reading at all) is
- * dropped: removed at once, its connection closed by a separate reaper thread, so not even
+ * dropped: removed at once, its connection cut by a separate reaper thread (B16), so not even
  * closing a stuck socket can stall the engine. Each client's own HTTP thread drains its
  * queue to the socket, sends {@code retry:} first and a comment heartbeat every
  * {@link #HEARTBEAT_MS} when idle.
@@ -76,7 +76,52 @@ public final class SseHub implements EventSink {
     clients.remove(c);
     droppedClients.incrementAndGet();
     c.queue.clear();
-    reaper.execute(c.exchange::close); // may block on a stuck socket: not on our thread
+    reaper.execute(() -> {
+      // A client that stopped reading leaves its stream thread blocked in a socket write that
+      // never completes, and exchange.close() would block the same way: cut the socket so
+      // both return at once (B16). Without access, fall back to close(), off our thread.
+      if (!abortConnection(c.exchange)) c.exchange.close();
+    });
+  }
+
+  private static volatile boolean warnedNoAbort;
+
+  /**
+   * Closes the TCP connection under {@code ex} immediately, which makes a write blocked on it
+   * fail at once. The JDK's HTTP server has no public way to do this or to time out a write,
+   * so this reads its internal fields; the JVM must run with
+   * {@code --add-opens jdk.httpserver/sun.net.httpserver=ALL-UNNAMED} (run.sh and test.sh do).
+   * Returns false, and warns once, if that is not possible.
+   */
+  static boolean abortConnection(HttpExchange ex) {
+    try {
+      Object impl = field(ex, "impl");
+      Object connection = field(impl, "connection");
+      ((java.nio.channels.Channel) field(connection, "chan")).close();
+      return true;
+    } catch (NoSuchFieldException e) {
+      return false; // not the JDK's exchange (a test double): nothing to cut
+    } catch (ReflectiveOperationException | RuntimeException | IOException e) {
+      if (!warnedNoAbort) {
+        warnedNoAbort = true;
+        LOG.log(Level.WARNING, "cannot cut off a stalled event-stream client (" + e
+            + "); start the JVM with --add-opens jdk.httpserver/sun.net.httpserver=ALL-UNNAMED");
+      }
+      return false;
+    }
+  }
+
+  private static Object field(Object o, String name) throws ReflectiveOperationException {
+    for (Class<?> k = o.getClass(); k != null; k = k.getSuperclass()) {
+      try {
+        java.lang.reflect.Field f = k.getDeclaredField(name);
+        f.setAccessible(true);
+        return f.get(o);
+      } catch (NoSuchFieldException e) {
+        // look in the superclass
+      }
+    }
+    throw new NoSuchFieldException(name);
   }
 
   public int clientCount() {

@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -31,7 +32,7 @@ import java.util.concurrent.CountDownLatch;
  *                                artificial triangular arbitrage detected
  *   run.sh accounts [FILE]       load an accounts file in a fresh JVM and print it
  *                                (default data/accounts.jsonl)
- *   run.sh archive [DIR]         decode a Logbook archive and summarise it
+ *   run.sh archive [DIR] [--records]   decode a Logbook archive and summarise it (or print every record)
  *                                (default data/logbook)
  *   run.sh structures            Stage 0 smoke run of the six structures
  *   run.sh serve [--host H] [--port N] [--data-dir DIR] [--seed-demo-accounts]
@@ -59,9 +60,12 @@ public final class Main {
       case "accounts":
         accounts(Paths.get(args.length > 1 ? args[1] : "data/accounts.jsonl"));
         break;
-      case "archive":
-        archive(Paths.get(args.length > 1 ? args[1] : "data/logbook"));
+      case "archive": {
+        boolean records = Arrays.asList(args).contains("--records");
+        String dir = args.length > 1 && !args[1].equals("--records") ? args[1] : "data/logbook";
+        archive(Paths.get(dir), records);
         break;
+      }
       case "structures":
         structures();
         break;
@@ -77,7 +81,7 @@ public final class Main {
   }
 
   private static void usage() {
-    System.err.println("usage: run.sh demo [--all-trades] | accounts [FILE] | archive [DIR]"
+    System.err.println("usage: run.sh demo [--all-trades] | accounts [FILE] | archive [DIR] [--records]"
         + " | structures | serve [--host H] [--port N] [--data-dir DIR] [--seed-demo-accounts]"
         + " [--min-profit PERCENT] [--port-file FILE]"
         + " | threshold-study [FILE]");
@@ -162,9 +166,17 @@ public final class Main {
     System.out.println(vault.size() + " accounts loaded from " + file + ", total cash " + total);
   }
 
-  /** Decodes every archive segment and prints a summary. */
-  private static void archive(Path dir) throws IOException {
+  /**
+   * Decodes every archive segment and prints a summary; with {@code --records}, prints every
+   * record instead (one trade per line, exactly as archived), for byte-for-byte checks.
+   */
+  private static void archive(Path dir, boolean all) throws IOException {
     byte[] records = Logbook.readArchive(dir);
+    if (all) {
+      System.out.write(records);
+      System.out.flush();
+      return;
+    }
     int lines = 0;
     for (byte b : records) {
       if (b == '\n') lines++;

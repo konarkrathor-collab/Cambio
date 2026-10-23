@@ -45,6 +45,7 @@ import java.util.logging.Logger;
  * <p>HTTP threads only parse and validate requests (a malformed request is a 400 there);
  * every command and every read of engine state then runs on the engine thread, in arrival
  * order. After each command the engine thread rotates the Logbook if due; every
+ * {@link #LOGBOOK_FLUSH_MS} it writes any buffered trades as a segment; every
  * {@link #VAULT_FLUSH_MS} it writes the Vault if anything changed; on shutdown it flushes
  * the Vault and writes the final Logbook segment. The one exception to the engine thread is
  * POST /api/simulate: it runs an isolated engine on a {@link SimulationRunner} worker and
@@ -58,6 +59,8 @@ import java.util.logging.Logger;
 public final class App {
   public static final long VAULT_FLUSH_MS = 2_000;
   public static final int LOGBOOK_ROTATE_EVERY = 500;
+  /** A non-empty Logbook buffer is written at least this often: the crash-loss window. */
+  public static final long LOGBOOK_FLUSH_MS = 5_000;
   public static final int DEFAULT_DEPTH = 10;
   public static final int MAX_DEPTH = 50;
   /** Recent trades kept for GET /api/trades. */
@@ -79,6 +82,8 @@ public final class App {
     public double minProfitPercent = ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT;
     /** How often the Vault and the counters are written while running. */
     public long flushIntervalMs = VAULT_FLUSH_MS;
+    /** How often a non-empty Logbook buffer is written as a segment (Stage 6, drill 1). */
+    public long logbookFlushMs = LOGBOOK_FLUSH_MS;
     /** Ids reserved on disk ahead of the counters while running (tests shrink it). */
     public long counterReserve = CounterStore.RESERVE;
     /** What POST /api/simulate runs; null for the real {@link Simulator} (tests replace it). */
@@ -102,6 +107,7 @@ public final class App {
   private long reservedTradeId;
   private long reservedSeq;
   private final long flushIntervalMs;
+  private final long logbookFlushMs;
   private final Trade[] recentTrades = new Trade[TRADE_RING];
   private int recentNext;
   private int recentCount;
@@ -135,6 +141,8 @@ public final class App {
     routes();
     flushIntervalMs = config.flushIntervalMs;
     thread.schedule(this::flushVault, flushIntervalMs);
+    logbookFlushMs = config.logbookFlushMs;
+    thread.schedule(this::flushLogbook, logbookFlushMs);
   }
 
   /** Builds the gateway and starts serving. */
@@ -168,12 +176,30 @@ public final class App {
 
   private void flushVault() {
     try {
-      if (vault.dirty()) vault.flush();
+      if (vault.dirty()) {
+        // trades first: a balance on disk must never include a trade the archive lacks (B13)
+        if (logbook.bufferedTrades() > 0) logbook.rotate();
+        vault.flush();
+      }
       if (engine.sequence() != countersWrittenAtSeq) writeReservedCounters();
     } catch (IOException e) {
       LOG.log(Level.WARNING, "vault/counter flush failed; will retry", e);
     }
     thread.schedule(this::flushVault, flushIntervalMs);
+  }
+
+  /**
+   * Writes the buffered trades as a segment if there are any, so a crash loses at most the
+   * trades of the last {@link Config#logbookFlushMs} (engine thread). Before Stage 6 the
+   * buffer was written only every 500 trades, and a quiet session could lose all of them.
+   */
+  private void flushLogbook() {
+    try {
+      if (logbook.bufferedTrades() > 0) logbook.rotate();
+    } catch (IOException e) {
+      LOG.log(Level.WARNING, "logbook flush failed; will retry", e);
+    }
+    thread.schedule(this::flushLogbook, logbookFlushMs);
   }
 
   /** Writes the counters plus the reserve (engine thread, or the constructor). */
