@@ -1,6 +1,6 @@
 # API Contract (Stage 3)
 
-**Status: FROZEN** (accepted by the supervisor, 2026-10-24). The frontend (Stage 5) builds against this version. Existing endpoints, fields, status codes and error codes do not change. Additive changes (a new endpoint, a new optional response field) are allowed only with the supervisor's approval and must be added to this document in the same commit. Every example in §7 is a real request and its real response, captured from a running server by `backend/scripts/contract_examples.sh`. Re-run that script to regenerate them. Timestamps and `uptimeMs` change between runs; nothing else does.
+**Status: FROZEN** (accepted by the supervisor, 2026-10-24). The frontend (Stage 5) builds against this version. Existing endpoints, fields, status codes and error codes do not change. Additive changes (a new endpoint, a new optional response field) are allowed only with the supervisor's approval and must be added to this document in the same commit. Every example in §7 is a real request and its real response, captured from a running server by `backend/scripts/contract_examples.sh`. Re-run that script to regenerate them. Timestamps, `uptimeMs` and the simulator's timing fields (§3.12) change between runs; nothing else does.
 
 Server: `backend/run.sh serve [--host 127.0.0.1] [--port 8080] [--data-dir data] [--seed-demo-accounts] [--min-profit 0.02] [--port-file FILE]`. It binds to `127.0.0.1:8080` by default.
 
@@ -44,10 +44,12 @@ Every error has one shape, with an HTTP status:
 | 404 | `ACCOUNT_NOT_FOUND` | `GET /api/accounts/{id}` for an unknown trader. |
 | 404 | `UNKNOWN_PAIR` | A pair in the **path** (order book, inspector) that is not listed. A pair in an order **body** is a business rejection instead (below). |
 | 405 | `METHOD_NOT_ALLOWED` | The endpoint exists but not with this method; the `Allow` header lists the methods it supports. |
+| 404 | `NO_SIMULATION` | `GET /api/simulate/last` before any simulation has finished in this server session (Stage 4). |
 | 409 | `ACCOUNT_EXISTS` | `POST /api/accounts` for a trader that already has an account. |
+| 409 | `SIMULATION_RUNNING` | `POST /api/simulate` while another simulation is running (Stage 4). |
 | 413 | `BODY_TOO_LARGE` | The body is larger than 1 MB. |
 | 500 | `INTERNAL` | An unexpected failure. It is logged on the server, and the server keeps serving. |
-| 501 | `NOT_IMPLEMENTED` | `POST /api/simulate` (Stage 4). |
+| 501 | `NOT_IMPLEMENTED` | No longer returned. It was `POST /api/simulate` before Stage 4. |
 | 503 | `TOO_MANY_STREAMS`, `SHUTTING_DOWN` | `GET /api/stream` with 32 streams already open, or while the server is stopping. |
 
 **Business rejections are not HTTP errors.** A well-formed order that the engine refuses returns **HTTP 200** with `"status": "REJECTED"` and a `reason`. The first failing check wins, in this order (doc 08 Appendix A):
@@ -77,7 +79,8 @@ Every error has one shape, with an HTTP status:
 | `GET /api/accounts` | List accounts | 200 | |
 | `GET /api/accounts/{traderId}` | One account | 200 | 400, 404 |
 | `POST /api/accounts` | Create an account | 201 | 400, 409 |
-| `POST /api/simulate` | Simulator | — | 501 (until Stage 4) |
+| `POST /api/simulate` | Run a simulation on an isolated engine (Stage 4) | 200 | 400, 409 |
+| `GET /api/simulate/last` | The most recent simulation result (Stage 4) | 200 | 404 |
 | `GET /api/stream` | Server-Sent Events | 200 (`text/event-stream`) | 503 |
 | `GET /api/health` | Liveness (goes through the engine thread) | 200 | |
 | `OPTIONS` (any path) | CORS preflight | 204 | 403 |
@@ -144,6 +147,47 @@ Status fields:
 
 The trade history a dashboard needs on page load; the event stream only delivers new trades. Trades come from an in-memory ring of the last 500 trades of this server session, held on the engine thread, so the list is empty after a restart. The archive in the Logbook keeps every trade. `pair` is optional, normalized as everywhere (`EUR-USD`, `eur/usd`); an unknown pair is 404 `UNKNOWN_PAIR`. `limit` defaults to 50, and anything outside 1 to 500 is 400 `BAD_REQUEST`. Response: `pair` (normalized, or null), `limit`, `count`, and `trades` (**newest first**, each in the shape of `trades[]` in §3.1).
 
+### 3.12 `POST /api/simulate` (additive, Stage 4)
+
+Runs a seeded load test **inside the server's JVM on an isolated engine**: its own Directory, an in-memory Vault holding twelve simulation traders (ids 1 to 12, cash and margin limit 10¹⁵ each), its own books and scanner, no Logbook and no event stream. A simulation never touches the live books, accounts, trades, `seq` or `/api/stream`. It runs on a worker thread of its own, not on the engine thread, so the live API keeps serving during it. One runs at a time: a second request meanwhile gets **409 `SIMULATION_RUNNING`** and is not queued. The request returns when the simulation finishes (about 2 s for 1,000,000 orders with the baseline, measured in the development container).
+
+Request (JSON; every field optional; an empty body means all defaults; unknown fields and out-of-range values are 400 `BAD_REQUEST`):
+
+| Field | Type | Default | Range | Meaning |
+| :--- | :--- | :-: | :--- | :--- |
+| `numOrders` | integer | 5000 | 1 … 1,000,000 | Operations to run. Cancels and invalid orders are included. |
+| `seed` | integer | 42 | any 64-bit integer | The same seed always gives the same stream, trades and `tradeChecksum`. |
+| `baseline` | boolean | true | | Also replay the stream on the naive matcher and compare. |
+| `scanEvery` | integer | 100 | 0 … 1,000,000 | One arbitrage scan on synthetic rates after every that many operations; 0 disables scans. |
+| `rateVolatility` | number | 0.01 | 0 … 1 | Percent per step for the synthetic rates (see below). |
+
+**The stream** (`backend/src/ads/sim/OrderGenerator.java` documents it in full). Each operation is independently: 55% a LIMIT order on one of EUR/USD, GBP/USD, USD/JPY, EUR/GBP, AUD/USD, USD/CHF, BUY or SELL, priced uniformly within ±10 ticks of a fixed mid, with quantity 1–100, so orders cross constantly; 15% a MARKET order with quantity 1–50; 20% a cancel of an order that is resting at that moment (id 0, which misses, if none rests); 10% an invalid order, spread evenly over unknown pair, quantity 0, quantity 10⁹+1, LIMIT price 0, and a trader with no account. These cover the rejection paths (`UNKNOWN_PAIR`, `BAD_QUANTITY`, `BAD_PRICE`, `MARGIN`), and `NO_LIQUIDITY` comes from market orders on an empty side. **Synthetic rates:** before each scan, every currency's USD rate takes a uniform random step of up to `rateVolatility` percent. Each of the 66 currency pairs is then quoted at the cross of those rates times its own fresh jitter of the same size. There is no bid/ask spread, so at the default volatility nearly every scan finds a cycle; at 0 none does. The scans use the server's `--min-profit` threshold.
+
+**Measurement.** Each submit and each cancel is timed on its own with `System.nanoTime()` around the engine call alone: no HTTP, no JSON, no generator. `durationMs` is the wall time of the order operations only: the clock stops for each rate step and scan. The generator first writes the whole stream untimed. To know which orders are live, it drives a scratch engine as it goes, and that pass also warms the JIT. The baseline gets an untimed warm-up on the first 20,000 operations.
+
+Response (200):
+
+| Field | Meaning |
+| :--- | :--- |
+| `numOrders`, `seed`, `scanEvery`, `rateVolatility` | The parameters used. |
+| `durationMs` | Order-processing wall time, milliseconds with 3 decimals. |
+| `ordersPerSec` | `numOrders / durationMs` (integer). |
+| `trades` | Fills executed. |
+| `rejects` | Submissions with status `REJECTED`. |
+| `cancels` | Cancels that removed a resting order. |
+| `latencyUs` | `{submit: {count, p50, p90, p99, max}, cancel: {…}}`, in microseconds with 3 decimals (exact nanosecond counts), by the nearest-rank method (the p-th percentile of n samples is the sample of rank ⌈p·n/100⌉). `count` is the number of operations of that kind, including cancels that missed. |
+| `scans` | `{count, p50Us, p99Us, loopholesFound}`: scans run, their time (as above), and how many reported a cycle. |
+| `tradeChecksum` | FNV-1a 64-bit, as 16 hex digits, over every trade in execution order. Each trade contributes `tradeId, seq, pairId, price ticks, quantity, buyOrderId, sellOrderId, buyerId, sellerId, takerSide (1 = BUY)`, each as 8 little-endian bytes. |
+| `restingOrders` | Orders left on the simulated books at the end. |
+| `baseline` | null when `baseline` is false. Otherwise the same stream replayed on the **naive matcher**: Appendix A over plain arrays. Each pair's resting orders sit in one array in arrival order and are scanned for the best opposite price on every order; a cancel scans every array for the id; there is no tree, index or hash. It has `numOrders, durationMs, ordersPerSec, trades, rejects, cancels, latencyUs, tradeChecksum, restingOrders`, measured the same way, plus `checksumMatch` (its `tradeChecksum` equals the engine's; always true unless one of them is wrong) and `speedup` (engine `ordersPerSec` / baseline `ordersPerSec`, 2 decimals; below 1 means the baseline was faster). |
+| `finishedAt` | ISO-8601 UTC. |
+
+The timing fields and `finishedAt` vary between runs. Every other field is a function of the request alone.
+
+### 3.13 `GET /api/simulate/last` (additive, Stage 4)
+
+The most recent result of `POST /api/simulate` in this server session, byte for byte, so a dashboard can show it after a reload. It is 404 `NO_SIMULATION` until one has finished. While a simulation runs, it still returns the previous result.
+
 ## 4. Event stream: `GET /api/stream`
 
 Server-Sent Events (`text/event-stream`; use `new EventSource("/api/stream")`). The stream opens with `retry: 3000` and a `: connected` comment. Every event carries `id:` (strictly increasing), `event:` and one line of `data:` JSON. A `: heartbeat` comment is sent after 15 s without events.
@@ -169,7 +213,7 @@ Doc 08 Appendix B, plus the optional `replay` flag (§3.7).
 
 ## 7. Captured examples
 
-<!-- captured by backend/scripts/contract_examples.sh on 2026-10-23T20:30:40Z -->
+<!-- captured by backend/scripts/contract_examples.sh on 2026-10-23T20:44:07Z -->
 
 ### 7 · Health and directory
 #### Health
@@ -187,7 +231,7 @@ Response: **200**
     "accounts": 12,
     "sseClients": 0,
     "sseDropped": 0,
-    "uptimeMs": 160
+    "uptimeMs": 144
 }
 ```
 
@@ -1223,7 +1267,7 @@ Response: **200**
     "replay": false,
     "connected": true,
     "lastTickAt": "2026-10-23T19:24:28.461Z",
-    "lastPayloadAt": "2026-10-23T20:30:41.242Z",
+    "lastPayloadAt": "2026-10-23T20:44:08.252Z",
     "tickCount": 3,
     "rejectedTicks": 1,
     "payloads": 1,
@@ -1231,7 +1275,7 @@ Response: **200**
     "staleSymbols": [],
     "fallbackAsOf": null,
     "scanCount": 1,
-    "lastScanAt": "2026-10-23T20:30:41.243Z",
+    "lastScanAt": "2026-10-23T20:44:08.253Z",
     "lastScanFoundCycle": true,
     "excludedEdges": 0,
     "minProfitPercent": 0.02,
@@ -1277,7 +1321,7 @@ Response: **200**
     "excludedEdges": 0,
     "belowThreshold": false,
     "scanCount": 1,
-    "scannedAt": "2026-10-23T20:30:41.243Z"
+    "scannedAt": "2026-10-23T20:44:08.253Z"
 }
 ```
 
@@ -1391,7 +1435,7 @@ Response: **200**
         "GBP",
         "USD"
     ],
-    "scannedAt": "2026-10-23T20:30:41.243Z"
+    "scannedAt": "2026-10-23T20:44:08.253Z"
 }
 ```
 
@@ -1446,8 +1490,24 @@ Response: **400**
 }
 ```
 
-### 7 · Other
-#### Simulator (Stage 4)
+### 7 · Simulator
+#### Last result before any simulation
+
+```http
+GET /api/simulate/last
+```
+Response: **404**
+
+```json
+{
+    "error": {
+        "code": "NO_SIMULATION",
+        "message": "no simulation has finished since the server started"
+    }
+}
+```
+
+#### Simulation with every default (numOrders 5000, seed 42, baseline, a scan every 100)
 
 ```http
 POST /api/simulate
@@ -1455,17 +1515,200 @@ POST /api/simulate
 ```json
 {}
 ```
-Response: **501**
+Response: **200**
+
+```json
+{
+    "numOrders": 5000,
+    "seed": 42,
+    "scanEvery": 100,
+    "rateVolatility": 0.01,
+    "durationMs": 5.433,
+    "ordersPerSec": 920260,
+    "trades": 2291,
+    "rejects": 638,
+    "cancels": 961,
+    "latencyUs": {
+        "submit": {
+            "count": 4039,
+            "p50": 0.483,
+            "p90": 1.656,
+            "p99": 6.690,
+            "max": 113.680
+        },
+        "cancel": {
+            "count": 961,
+            "p50": 0.251,
+            "p90": 0.408,
+            "p99": 1.978,
+            "max": 225.062
+        }
+    },
+    "scans": {
+        "count": 50,
+        "p50Us": 212.253,
+        "p99Us": 1450.465,
+        "loopholesFound": 50
+    },
+    "tradeChecksum": "cf084b63dbf339ae",
+    "restingOrders": 46,
+    "baseline": {
+        "numOrders": 5000,
+        "durationMs": 3.802,
+        "ordersPerSec": 1314983,
+        "trades": 2291,
+        "rejects": 638,
+        "cancels": 961,
+        "latencyUs": {
+            "submit": {
+                "count": 4039,
+                "p50": 0.521,
+                "p90": 1.090,
+                "p99": 1.796,
+                "max": 66.225
+            },
+            "cancel": {
+                "count": 961,
+                "p50": 0.421,
+                "p90": 0.685,
+                "p99": 0.913,
+                "max": 32.348
+            }
+        },
+        "tradeChecksum": "cf084b63dbf339ae",
+        "restingOrders": 46,
+        "checksumMatch": true,
+        "speedup": 0.70
+    },
+    "finishedAt": "2026-10-23T20:44:08.420614050Z"
+}
+```
+
+#### Without the baseline, scans off, no rate volatility
+
+```http
+POST /api/simulate
+```
+```json
+{
+    "numOrders": 20000,
+    "seed": 7,
+    "baseline": false,
+    "scanEvery": 0,
+    "rateVolatility": 0
+}
+```
+Response: **200**
+
+```json
+{
+    "numOrders": 20000,
+    "seed": 7,
+    "scanEvery": 0,
+    "rateVolatility": 0,
+    "durationMs": 12.060,
+    "ordersPerSec": 1658273,
+    "trades": 9179,
+    "rejects": 2632,
+    "cancels": 3906,
+    "latencyUs": {
+        "submit": {
+            "count": 16093,
+            "p50": 0.398,
+            "p90": 0.802,
+            "p99": 1.535,
+            "max": 155.322
+        },
+        "cancel": {
+            "count": 3907,
+            "p50": 0.221,
+            "p90": 0.279,
+            "p99": 0.617,
+            "max": 29.641
+        }
+    },
+    "scans": {
+        "count": 0,
+        "p50Us": 0.000,
+        "p99Us": 0.000,
+        "loopholesFound": 0
+    },
+    "tradeChecksum": "64c7ea816eef6250",
+    "restingOrders": 30,
+    "baseline": null,
+    "finishedAt": "2026-10-23T20:44:08.467081744Z"
+}
+```
+
+#### Out-of-range parameter
+
+```http
+POST /api/simulate
+```
+```json
+{
+    "numOrders": 0
+}
+```
+Response: **400**
 
 ```json
 {
     "error": {
-        "code": "NOT_IMPLEMENTED",
-        "message": "POST /api/simulate arrives in Stage 4"
+        "code": "BAD_REQUEST",
+        "message": "numOrders must be an integer from 1 to 1000000"
     }
 }
 ```
 
+#### Last result (the most recent simulation, as returned)
+
+```http
+GET /api/simulate/last
+```
+Response: **200**
+
+```json
+{
+    "numOrders": 20000,
+    "seed": 7,
+    "scanEvery": 0,
+    "rateVolatility": 0,
+    "durationMs": 12.060,
+    "ordersPerSec": 1658273,
+    "trades": 9179,
+    "rejects": 2632,
+    "cancels": 3906,
+    "latencyUs": {
+        "submit": {
+            "count": 16093,
+            "p50": 0.398,
+            "p90": 0.802,
+            "p99": 1.535,
+            "max": 155.322
+        },
+        "cancel": {
+            "count": 3907,
+            "p50": 0.221,
+            "p90": 0.279,
+            "p99": 0.617,
+            "max": 29.641
+        }
+    },
+    "scans": {
+        "count": 0,
+        "p50Us": 0.000,
+        "p99Us": 0.000,
+        "loopholesFound": 0
+    },
+    "tradeChecksum": "64c7ea816eef6250",
+    "restingOrders": 30,
+    "baseline": null,
+    "finishedAt": "2026-10-23T20:44:08.467081744Z"
+}
+```
+
+### 7 · Other
 #### Unknown endpoint
 
 ```http
@@ -1575,7 +1818,7 @@ data: {"pair":"EUR/GBP","rate":0.83409,"ts":1792783468461,"source":"finnhub-ws"}
 
 id: 13
 event: LOOPHOLE_ALERT
-data: {"hasArbitrage":true,"cycle":["USD","EUR","GBP","USD"],"multiplier":1.0039972222222222,"profitPercent":0.39972222222222076,"minProfitPercent":0.02,"edges":6,"excludedEdges":0,"belowThreshold":false,"scanCount":1,"scannedAt":"2026-10-23T20:30:41.243Z","active":true}
+data: {"hasArbitrage":true,"cycle":["USD","EUR","GBP","USD"],"multiplier":1.0039972222222222,"profitPercent":0.39972222222222076,"minProfitPercent":0.02,"edges":6,"excludedEdges":0,"belowThreshold":false,"scanCount":1,"scannedAt":"2026-10-23T20:44:08.253Z","active":true}
 
 id: 14
 event: RATE_TICK
@@ -1595,6 +1838,6 @@ data: {"pair":"USD/INR","rate":96.73,"ts":null,"source":"frankfurter-fallback"}
 
 id: 18
 event: LOOPHOLE_ALERT
-data: {"hasArbitrage":false,"cycle":[],"multiplier":1,"profitPercent":0,"minProfitPercent":0.02,"edges":20,"excludedEdges":0,"belowThreshold":false,"scanCount":2,"scannedAt":"2026-10-23T20:30:41.744Z","active":false}
+data: {"hasArbitrage":false,"cycle":[],"multiplier":1,"profitPercent":0,"minProfitPercent":0.02,"edges":20,"excludedEdges":0,"belowThreshold":false,"scanCount":2,"scannedAt":"2026-10-23T20:44:08.754Z","active":false}
 
 ```

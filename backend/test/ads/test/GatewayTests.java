@@ -47,7 +47,7 @@ final class GatewayTests {
         () -> withApp(GatewayTests::cancel));
     r.check("every 400 path (bad JSON, missing field, wrong type, unknown enum/field, depth)",
         () -> withApp(GatewayTests::badRequests));
-    r.check("404 / 405 / 409 / 501 paths", () -> withApp(GatewayTests::otherErrors));
+    r.check("404 / 405 / 409 paths", () -> withApp(GatewayTests::otherErrors));
     r.check("REJECTED with each reason is HTTP 200, precedence kept through the API",
         () -> withApp(GatewayTests::rejections));
     r.check("price conversion over HTTP: exact, trailing zeros, strings, JPY, non-multiples,"
@@ -271,7 +271,6 @@ final class GatewayTests {
     c.json("POST", "/api/accounts", "{\"traderId\":500,\"cash\":1000,\"marginLimit\":900}", 201);
     check(c.errorCode(c.send("POST", "/api/accounts", "{\"traderId\":500,\"cash\":1,\"marginLimit\":1}"))
         .equals("409 ACCOUNT_EXISTS"), "409");
-    check(c.errorCode(c.send("POST", "/api/simulate", "{}")).equals("501 NOT_IMPLEMENTED"), "501");
     return TestRunner.Result.pass(null);
   }
 

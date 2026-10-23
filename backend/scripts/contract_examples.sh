@@ -131,8 +131,13 @@ ex "Latest scan" GET /api/arbitrage/scan
 ex "Currency graph" GET /api/arbitrage/graph
 ex "Fallback snapshot (frankfurter-fallback): the store switches source" POST /api/market/rates '{"source":"frankfurter-fallback","base":"USD","asOf":"2026-10-23","rates":{"EUR":0.92593,"GBP":0.76923,"JPY":156.87,"INR":96.73,"BGN":1.81}}'
 ex "Unknown source" POST /api/market/rates '{"source":"bloomberg","ticks":[]}'
+echo "### Simulator"
+ex "Last result before any simulation" GET /api/simulate/last
+ex "Simulation with every default (numOrders 5000, seed 42, baseline, a scan every 100)" POST /api/simulate '{}'
+ex "Without the baseline, scans off, no rate volatility" POST /api/simulate '{"numOrders":20000,"seed":7,"baseline":false,"scanEvery":0,"rateVolatility":0}'
+ex "Out-of-range parameter" POST /api/simulate '{"numOrders":0}'
+ex "Last result (the most recent simulation, as returned)" GET /api/simulate/last
 echo "### Other"
-ex "Simulator (Stage 4)" POST /api/simulate '{}'
 ex "Unknown endpoint" GET /api/nope
 ex "Wrong method" PUT /api/orders '{}'
 echo "#### CORS preflight from the Vite dev origin"

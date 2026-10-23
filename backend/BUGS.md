@@ -179,6 +179,22 @@ On real ticks the near-threshold cycles are almost never triangles. Bid/ask nois
 
 ---
 
+## B11: On the simulator's workload the engine is no faster than the naive baseline (Stage 4, measured, open)
+
+**What was measured.** `POST /api/simulate` runs the doc 08 Stage 4 mix: a narrow ±10-tick band, 20% cancels and constant crossing. On that mix the books stay shallow: 46 orders rest across six pairs after 5,000 operations, and 57 after 1,000,000. At that depth the naive matcher scans about ten contiguous array slots per pair, which is as fast as the B+ tree, the order index and the per-order allocations. The engine allocates an `OrderResult`, a `Trade[]`, a `Trade` per fill and an `Order` when one rests, and it reads the account through the Vault's LRU cache. Measured `speedup` in the development container:
+
+| Run | engine orders/s | baseline orders/s | speedup |
+| :--- | --: | --: | --: |
+| 5,000, fresh server | 1,021,552 | 1,326,670 | 0.77 |
+| 1,000,000, fresh server | 3,670,029 | 3,972,357 | 0.92 |
+| 1,000,000, same server, runs 1 / 2 / 3 | 3.88M / 4.37M / 4.51M | 3.42M / 4.32M / 4.49M | 1.14 / 1.01 / 1.00 |
+
+The engine's tail is also longer: submit max 3.1 ms against 0.11 ms at 1,000,000. Those are collection pauses: `-Xlog:gc` on a 1,000,000 run shows 1–4 ms young-generation pauses, which match the engine's 2–3.7 ms maximums. The baseline allocates nothing per order. Its p99 was 1.6 µs against 0.8 µs from a fresh server, and level with the baseline when warm. Every run matched checksums.
+
+**Not changed.** The workload was not changed to make the baseline lose: doc 08 fixes the mix, and the rule is not to tune for a target. The doc 04 throughput target (≥ 50,000 orders/s) is met many times over by both. The structures win when the book is deep (the Stage 0 benchmark and doc 04 Phase 5 measure that), and this mix never builds a deep book. Two options for the supervisor: (a) accept this as the honest result for this mix; (b) approve a second, deep-book profile (for example a wider band and fewer cancels), offered alongside the default rather than replacing it. Cutting the engine's per-order allocations is a separate, possible optimisation.
+
+---
+
 ## Note (not a bug): Appendix A lets cash go negative. Accepted in doc 08 at 6462f32
 
 Implemented as written, Appendix A checks margin per order against the account as it is at that moment, and nothing is reserved for resting orders. A market order is checked only at the best opposite tick, even if it then sweeps deeper. So a trader with cash 1,000 can rest two buys of 10 × 100. Each passes on its own, both fill, and cash ends at −1,000. The engine does not improvise a reservation. The Vault accepts negative cash when loading (it rejects only a negative `marginLimit`), and the scenario test `Appendix A reserves no cash…` pins the behaviour down. Doc 08 Appendix A now records this as a known simplification.

@@ -18,6 +18,7 @@ import ads.engine.Side;
 import ads.engine.Trade;
 import ads.logbook.Logbook;
 import ads.scanner.ArbitrageScanner;
+import ads.sim.Simulator;
 import ads.vault.Account;
 import ads.vault.Vault;
 
@@ -45,7 +46,9 @@ import java.util.logging.Logger;
  * every command and every read of engine state then runs on the engine thread, in arrival
  * order. After each command the engine thread rotates the Logbook if due; every
  * {@link #VAULT_FLUSH_MS} it writes the Vault if anything changed; on shutdown it flushes
- * the Vault and writes the final Logbook segment.
+ * the Vault and writes the final Logbook segment. The one exception to the engine thread is
+ * POST /api/simulate: it runs an isolated engine on a {@link SimulationRunner} worker and
+ * never touches the live state.
  *
  * <p>The API speaks decimals and pair names ({@code EUR/USD} in bodies, {@code EUR-USD} in
  * paths, both upper-cased); the engine speaks integer ticks and pair ids. Conversion is
@@ -64,6 +67,8 @@ public final class App {
   private static final Set<String> ORDER_FIELDS =
       Set.of("traderId", "pair", "side", "type", "price", "quantity");
   private static final Set<String> ACCOUNT_FIELDS = Set.of("traderId", "cash", "marginLimit");
+  private static final Set<String> SIMULATE_FIELDS =
+      Set.of("numOrders", "seed", "baseline", "scanEvery", "rateVolatility");
 
   /** Startup options ({@code run.sh serve ...}). */
   public static final class Config {
@@ -72,6 +77,8 @@ public final class App {
     public Path dataDir = Paths.get("data");
     public boolean seedDemoAccounts;
     public double minProfitPercent = ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT;
+    /** What POST /api/simulate runs; null for the real {@link Simulator} (tests replace it). */
+    public SimulationRunner.Task simulationTask;
   }
 
   private final Directory directory = new Directory();
@@ -82,6 +89,7 @@ public final class App {
   private final Logbook logbook;
   private final MarketService market;
   private final ApiServer server;
+  private final SimulationRunner simulations;
   private final long[] lastTradeTick;
   private final CounterStore counters;
   private long countersWrittenAtSeq = -1;
@@ -110,6 +118,9 @@ public final class App {
     market = new MarketService(new ArbitrageScanner(directory, config.minProfitPercent), thread,
         System::currentTimeMillis, hub);
     server = new ApiServer(new InetSocketAddress(config.host, config.port));
+    Simulator simulator = new Simulator(config.minProfitPercent);
+    simulations = new SimulationRunner(
+        config.simulationTask != null ? config.simulationTask : simulator::run);
     routes();
     thread.schedule(this::flushVault, VAULT_FLUSH_MS);
   }
@@ -129,6 +140,7 @@ public final class App {
   public void stop() {
     server.stop();
     hub.close();
+    simulations.shutdown();
     try {
       thread.call(() -> {
         vault.flush();
@@ -192,9 +204,9 @@ public final class App {
       long[] a = parseAccount(req.jsonExact());
       return thread.call(() -> createAccount(a));
     });
-    server.route("POST", "/api/simulate", req -> {
-      throw new ApiException(501, "NOT_IMPLEMENTED", "POST /api/simulate arrives in Stage 4");
-    });
+    // isolated engine on its own worker thread: never thread.call, never the live state
+    server.route("POST", "/api/simulate", req -> simulations.run(parseSimulate(req)));
+    server.route("GET", "/api/simulate/last", req -> simulations.last());
     server.route("GET", "/api/inspector/{pair}", req -> {
       String pair = normalizePair(req.param("pair"));
       return thread.call(() -> inspector(pair));
@@ -355,6 +367,44 @@ public final class App {
     if (trader <= 0) throw badRequest("traderId must be positive");
     if (cash < 0 || margin < 0) throw badRequest("cash and marginLimit must be >= 0");
     return new long[] { trader, cash, margin };
+  }
+
+  /** POST /api/simulate: every field optional (an empty body is all defaults). */
+  private static Simulator.Params parseSimulate(ApiServer.Request req) throws ApiException {
+    Simulator.Params p = new Simulator.Params();
+    if (req.bodyIsBlank()) return p;
+    Map<?, ?> m = object(req.jsonExact(), SIMULATE_FIELDS);
+    if (m.containsKey("numOrders")) {
+      p.numOrders = (int) intInRange(m, "numOrders", 1, Simulator.MAX_ORDERS);
+    }
+    if (m.containsKey("seed")) p.seed = requiredLong(m, "seed");
+    if (m.containsKey("baseline")) {
+      Object b = m.get("baseline");
+      if (!(b instanceof Boolean)) throw badRequest("baseline must be true or false");
+      p.baseline = (Boolean) b;
+    }
+    if (m.containsKey("scanEvery")) {
+      p.scanEvery = (int) intInRange(m, "scanEvery", 0, Simulator.MAX_ORDERS);
+    }
+    if (m.containsKey("rateVolatility")) {
+      Object v = m.get("rateVolatility");
+      BigDecimal d = v instanceof Long ? BigDecimal.valueOf((Long) v)
+          : v instanceof BigDecimal ? (BigDecimal) v : null;
+      if (d == null || d.signum() < 0 || d.compareTo(Simulator.MAX_VOLATILITY) > 0) {
+        throw badRequest("rateVolatility must be a number from 0 to 1 (percent per step)");
+      }
+      p.rateVolatility = d;
+    }
+    return p;
+  }
+
+  private static long intInRange(Map<?, ?> m, String field, long min, long max)
+      throws ApiException {
+    Object v = m.get(field);
+    if (!(v instanceof Long) || (Long) v < min || (Long) v > max) {
+      throw badRequest(field + " must be an integer from " + min + " to " + max);
+    }
+    return (Long) v;
   }
 
   private static ApiException badRequest(String message) {

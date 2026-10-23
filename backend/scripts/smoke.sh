@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage 3 smoke test: exercises every endpoint with curl only (macOS and Linux; no jq, no
+# Stage 3/4 smoke test: exercises every endpoint with curl only (macOS and Linux; no jq, no
 # python, no GNU-only tools).
 #   backend/scripts/smoke.sh                 start a fresh server (temp data dir, demo accounts)
 #   BASE=http://127.0.0.1:8080 backend/scripts/smoke.sh   use a running one (needs trader ids 1-12)
@@ -101,7 +101,10 @@ req POST /api/market/rates 200 '{"source":"finnhub-ws","ticks":[{"symbol":"OANDA
 req GET  /api/market/rates/status            200 "" '"tickCount":3'
 req GET  /api/arbitrage/scan                 200 "" '"hasArbitrage":true'
 req GET  /api/arbitrage/graph                200 "" '"cycle":\['
-req POST /api/simulate                       501 '{}' '"NOT_IMPLEMENTED"'
+req GET  /api/simulate/last                  404 "" '"NO_SIMULATION"'
+req POST /api/simulate                       200 '{"numOrders":20000,"seed":42}' '"checksumMatch":true'
+req POST /api/simulate                       400 '{"numOrders":0}' '"BAD_REQUEST"'
+req GET  /api/simulate/last                  200 "" '"numOrders":20000'
 req GET  /api/nope                           404 "" '"NOT_FOUND"'
 
 # CORS preflight from the Vite dev origin, and from an origin that is not allowed

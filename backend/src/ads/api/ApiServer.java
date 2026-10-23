@@ -92,6 +92,14 @@ public final class ApiServer {
       return null;
     }
 
+    /** True if the body is empty or only whitespace. */
+    public boolean bodyIsBlank() {
+      for (byte b : body) {
+        if (b != ' ' && b != '\t' && b != '\r' && b != '\n') return false;
+      }
+      return true;
+    }
+
     /** The body parsed as JSON (numbers as Long/Double); 400 BAD_JSON if invalid. */
     public Object json() throws ApiException {
       return parse(false);
