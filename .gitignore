@@ -24,3 +24,6 @@ npm-debug.log*
 # Editor
 .vscode/
 .idea/
+
+# Local agent instructions (not for the submitted repo)
+CLAUDE.md
