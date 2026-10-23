@@ -7,6 +7,7 @@ import ads.engine.Order;
 import ads.engine.OrderIndex;
 import ads.engine.PriceLadder;
 import ads.engine.PriceLevel;
+import ads.engine.Side;
 import ads.logbook.HuffmanCodec;
 import ads.vault.LruCache;
 
@@ -75,7 +76,7 @@ final class UnitTests {
         long price = 1_000 + rng.nextInt(200);
         long qty = 1 + rng.nextInt(1_000);
         long id = nextId++;
-        Order o = new Order(id, qty);
+        Order o = new Order(id, 0, s == 0 ? Side.BUY : Side.SELL, 0, price, qty, id);
         side[s].getOrCreate(price).append(o);
         index.put(o);
         ref.get(s).computeIfAbsent(price, p -> new ArrayDeque<>()).add(new long[] { id, qty });
@@ -191,7 +192,7 @@ final class UnitTests {
   private static TestRunner.Result queueMisuse() {
     PriceLevel a = new PriceLevel(10);
     PriceLevel b = new PriceLevel(11);
-    Order o = new Order(1, 5);
+    Order o = new Order(1, 0, Side.BUY, 0, 10, 5, 1);
     a.append(o);
     try {
       b.append(o);

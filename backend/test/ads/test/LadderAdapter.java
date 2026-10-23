@@ -1,17 +1,22 @@
 package ads.test;
 
 import ads.bench.ladder.LadderOps;
+import ads.engine.Order;
 import ads.engine.PriceLadder;
 import ads.engine.PriceLevel;
+import ads.engine.Side;
 
 /**
  * Presents a production {@link PriceLadder} as the benchmark's {@link LadderOps}, so the
  * benchmark's own replay, oracle and gate run against it unchanged. A level's volume is
- * the {@link PriceLevel}'s aggregate volume; walks sum the prices of the levels returned.
+ * the {@link PriceLevel}'s aggregate volume, held by one synthetic resting order per level
+ * (since Stage 1 a level's volume can only change through its orders); walks sum the
+ * prices of the levels returned.
  */
 final class LadderAdapter implements LadderOps {
   private final PriceLadder ladder;
   private PriceLevel[] buf = new PriceLevel[64];
+  private long nextId = 1;
 
   LadderAdapter(PriceLadder ladder) {
     this.ladder = ladder;
@@ -20,7 +25,16 @@ final class LadderAdapter implements LadderOps {
   @Override
   public void put(long tick, long volume) {
     PriceLevel l = ladder.getOrCreate(tick);
-    l.adjustVolume(volume - l.totalVolume());
+    Order h = l.head();
+    if (h != null) {
+      if (volume == h.remaining()) return;
+      if (volume < h.remaining()) {
+        l.fill(h, h.remaining() - volume);
+        return;
+      }
+      l.unlink(h);
+    }
+    l.append(new Order(nextId++, 0, Side.BUY, 0, tick, volume, 0));
   }
 
   @Override

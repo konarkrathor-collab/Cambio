@@ -28,11 +28,24 @@ public final class PriceLevel {
   }
 
   /**
-   * Adjusts the aggregate volume without touching the queue — for partial fills, where
-   * the head order's remaining quantity shrinks but it stays queued.
+   * The ONLY way an order's remaining quantity changes: reduces it by {@code qty} and the
+   * level's aggregate volume with it. An order that reaches zero is unlinked from the
+   * level. Returns the order's new remaining quantity.
    */
-  public void adjustVolume(long delta) {
-    totalVolume += delta;
+  public long fill(Order o, long qty) {
+    if (o.level != this) {
+      throw new IllegalStateException("order " + o.orderId + " is not queued at " + price);
+    }
+    if (qty <= 0 || qty > o.remaining) {
+      throw new IllegalArgumentException("fill of " + qty + " on order " + o.orderId
+          + " with " + o.remaining + " remaining");
+    }
+    o.remaining -= qty;
+    totalVolume -= qty;
+    if (o.remaining == 0) {
+      unlink(o);
+    }
+    return o.remaining;
   }
 
   public int orderCount() {

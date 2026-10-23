@@ -60,6 +60,37 @@ Every failure throws `IllegalArgumentException`.
 
 ---
 
+## B4: A below-threshold cycle could hide a real arbitrage (Stage 1, own design)
+
+**What broke.** The first `ArbitrageScanner` ran Bellman-Ford once, on weights `-ln(rate) + ln(1+t)/(V+1)`, and then checked the returned cycle's exact profit against the 0.001% threshold `t`. Bellman-Ford returns *some* negative cycle, not the best one. When the graph held both a cycle earning about 0.0003% and one earning 0.002%, it could return the smaller one. The scan then reported "below threshold", and the real arbitrage was never reported. The brute-force scanner test caught it on its 62nd random graph:
+
+```
+FAIL  3000 random rate sets vs brute-force cycle enumeration  (26 ms)  trial 61: missed a 0.002044041780213668% cycle
+(diagnosis on that graph: arbitrage=false belowThreshold=true)
+```
+
+**Why.** The weight shift was chosen so that every cycle at or above the threshold stays negative, which is true. But it also let cycles earning as little as 2/(V+1) of the threshold stay negative, and any of those could be the one returned. Finding the most profitable simple cycle exactly is NP-hard in general, since it contains the longest-path problem, so Bellman-Ford alone can't promise to return the best cycle.
+
+**Fix.** The scan now runs passes L = 2, 3, …, V+1, the L-th on weights raised by `ln(1+t)/L`, and reports the most profitable returned cycle that passes the exact check.
+- The L = 2 pass can't return a sub-threshold cycle, because every cycle has at least 2 edges. So nothing can mask it, and any cycle of k edges earning more than `(1+t)^(k/2) − 1` is always reported.
+- The later passes reach closer to the threshold.
+
+The cost is V+1 Bellman-Ford runs, about 17,000 edge relaxations on the 12-currency graph. The remaining theoretical gap, a cycle between `t` and the guaranteed bound that Bellman-Ford never returns, is documented in the class comment. Across the 3,000 random graphs the test now reports 2,102 of 2,102 graphs with a cycle at or above 0.001%, with none in the gap.
+
+**Tests.** `3000 random rate sets vs brute-force cycle enumeration (exact check + guarantee)` in `backend/test/ads/test/ServiceTests.java`:
+- Every reported cycle is real.
+- Its multiplier is the product of its rates.
+- Its profit is at or above the threshold and no more than the best cycle's.
+- A scan must never stay silent when the guarantee applies.
+
+---
+
+## Note for review (not a bug): Appendix A lets cash go negative
+
+Implemented as written, Appendix A checks margin per order against the account as it is at that moment, and nothing is reserved for resting orders. A market order is checked only at the best opposite tick, even if it then sweeps deeper. So a trader with cash 1,000 can rest two buys of 10 × 100. Each passes on its own, both fill, and cash ends at −1,000. The engine does not improvise a reservation. The Vault accepts negative cash when loading (it rejects only a negative `marginLimit`), and the scenario test `Appendix A reserves no cash…` pins the behaviour down. If you want reservations, it's a change to Appendix A.
+
+---
+
 ## Porting note (not a bug): cleared slots in the B+ tree leaves
 
 The benchmark ladder stores volumes in a primitive `long[]`, so stale slots past `n` are harmless. The production leaves hold `PriceLevel` references, and a stale slot would keep a removed level, and through its queue that level's orders, reachable. That would be a slow memory leak in a long-running engine. Every place the port shifts or moves leaf entries out of a slot clears that slot: leaf delete, leaf split, and both borrow paths. Merges drop the whole right node. This changes no observable behaviour, and the parity gates cannot see it either way.

@@ -1,7 +1,8 @@
 package ads.engine;
 
 /**
- * The global order index: {@code orderId -> Order}, one per book, shared by both sides.
+ * The engine-wide order index: {@code orderId -> Order} for every resting order of every
+ * pair (order ids are global, and a cancel carries only the id).
  * A hand-rolled separate-chaining hash table whose chains run through the orders
  * themselves ({@link Order#hnext}), so indexing an order allocates nothing beyond table
  * growth. Power-of-two buckets, doubled when the load exceeds 0.75. Hash function and

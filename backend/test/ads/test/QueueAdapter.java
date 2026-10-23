@@ -4,6 +4,7 @@ import ads.bench.queue.QueueOps;
 import ads.engine.Order;
 import ads.engine.OrderIndex;
 import ads.engine.PriceLevel;
+import ads.engine.Side;
 
 /**
  * Presents the production order queue (one {@link PriceLevel}'s doubly linked list plus
@@ -16,7 +17,7 @@ final class QueueAdapter implements QueueOps {
 
   @Override
   public void enqueue(long orderId, long volume) {
-    Order o = new Order(orderId, volume);
+    Order o = new Order(orderId, 0, Side.BUY, 0, 1, volume, orderId);
     level.append(o);
     index.put(o);
   }

@@ -12,6 +12,34 @@ cd "$(dirname "$0")"
 ../benchmark/build.sh
 ./build.sh
 
+# doc 08 §3 source rules, checked on every run
+echo "== source rules (doc 08 §3) =="
+rules_failed=0
+if grep -rn "java\.util" src; then
+  echo "FAIL  java.util appears under src/ (structures and matching path must not use it)"
+  rules_failed=1
+else
+  echo "PASS  no java.util anywhere under src/"
+fi
+if grep -rnwE "double|float|Double|Float" src/ads/engine; then
+  echo "FAIL  floating point in src/ads/engine (orders are priced and matched in integers)"
+  rules_failed=1
+else
+  echo "PASS  no double/float in src/ads/engine"
+fi
+# an order's remaining quantity may only be written by PriceLevel.fill (and set once by
+# the Order constructor)
+if grep -rnE "\.remaining\s*([-+*/]?=[^=]|\+\+|--)|(\+\+|--)\s*[A-Za-z_.]*\.remaining" src \
+    | grep -v "^src/ads/engine/PriceLevel.java:" | grep -v "this.remaining = quantity;"; then
+  echo "FAIL  Order.remaining written outside PriceLevel.fill"
+  rules_failed=1
+else
+  echo "PASS  Order.remaining is written only in PriceLevel (fill) and the Order constructor"
+fi
+if [ "$rules_failed" -ne 0 ]; then
+  exit 1
+fi
+
 rm -rf out/test-classes
 mkdir -p out/test-classes
 find test -name '*.java' | sort > out/test-sources.txt

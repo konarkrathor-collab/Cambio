@@ -12,6 +12,10 @@ package ads.directory;
  * {@code contains} and {@code prefixSearch} treat a character outside the alphabet as "no
  * match" instead of indexing out of bounds, {@code insert} rejects it, and
  * {@code prefixSearch} stops when the caller's buffer is full.
+ *
+ * <p>Stage 1 addition: every registered ticker gets a small dense id (0, 1, 2, ... in
+ * insertion order), stored at its terminal node, so books can live in an array indexed by
+ * pair id instead of a map: {@link #idOf} and {@link #tickerOf}.
  */
 public final class TickerTrie {
   private static final int ALPHA = 27; // 'A'..'Z' then '/' at slot 26
@@ -21,10 +25,12 @@ public final class TickerTrie {
     int bitmap; // bit s set iff children[s] != null — iterate present children only
     boolean isEnd;
     String stored; // terminal nodes hold the original string (zero-alloc results)
+    int id = -1;   // dense ticker id at terminal nodes
   }
 
   private final Node root = new Node();
   private int count;
+  private String[] byId = new String[16];
 
   /** Child slot for c, or -1 if c is outside the alphabet. */
   private static int slot(char c) {
@@ -32,8 +38,10 @@ public final class TickerTrie {
     return c == '/' ? 26 : -1;
   }
 
-  /** Registers a ticker (idempotent). Characters must be 'A'-'Z' or '/'. */
-  public void insert(String ticker) {
+  /**
+   * Registers a ticker (idempotent) and returns its id. Characters must be 'A'-'Z' or '/'.
+   */
+  public int insert(String ticker) {
     for (int i = 0; i < ticker.length(); i++) {
       if (slot(ticker.charAt(i)) < 0) {
         throw new IllegalArgumentException("ticker has a character outside A-Z and '/': "
@@ -52,20 +60,38 @@ public final class TickerTrie {
     if (!n.isEnd) {
       n.isEnd = true;
       n.stored = ticker;
+      if (count == byId.length) {
+        String[] grown = new String[byId.length * 2];
+        System.arraycopy(byId, 0, grown, 0, count);
+        byId = grown;
+      }
+      n.id = count;
+      byId[count] = ticker;
       count++;
     }
+    return n.id;
   }
 
   /** Exact-match validation. */
   public boolean contains(String ticker) {
+    return idOf(ticker) >= 0;
+  }
+
+  /** The ticker's id, or -1 if it is not registered (or has characters outside the alphabet). */
+  public int idOf(String ticker) {
     Node n = root;
     for (int i = 0; i < ticker.length(); i++) {
       int s = slot(ticker.charAt(i));
-      if (s < 0) return false;
+      if (s < 0) return -1;
       n = n.children[s];
-      if (n == null) return false;
+      if (n == null) return -1;
     }
-    return n.isEnd;
+    return n.id;
+  }
+
+  /** The ticker registered under {@code id}, or null if no such id. */
+  public String tickerOf(int id) {
+    return id >= 0 && id < count ? byId[id] : null;
   }
 
   /**

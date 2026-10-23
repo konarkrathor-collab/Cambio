@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Run the backend.  Stage 0: ./run.sh [structures]  (a short smoke run of each structure)
+# Run the backend.
+#   ./run.sh demo [--all-trades]   Stage 1 demo: 1,000 seeded orders, then an arbitrage scan
+#   ./run.sh accounts [FILE]       reload an accounts file in a fresh JVM and print it
+#   ./run.sh archive [DIR]         decode a Logbook archive and summarise it
+#   ./run.sh structures            Stage 0 smoke run of each structure
 set -euo pipefail
 cd "$(dirname "$0")"
 

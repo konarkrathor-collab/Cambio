@@ -6,28 +6,100 @@ import ads.engine.Order;
 import ads.engine.OrderIndex;
 import ads.engine.PriceLadder;
 import ads.engine.PriceLevel;
+import ads.engine.Side;
 import ads.logbook.HuffmanCodec;
+import ads.logbook.Logbook;
 import ads.scanner.BellmanFord;
+import ads.vault.Account;
 import ads.vault.LruCache;
+import ads.vault.Vault;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
- * Backend entry point. Stage 0 ships the six data structures only; {@code structures}
- * (the default) exercises each once and prints what it did. The matching demo and the API
- * server arrive in later stages (documentation/08_build_plan_and_acceptance.md).
+ * Backend entry point (documentation/08_build_plan_and_acceptance.md).
+ *
+ * <pre>
+ *   run.sh demo [--all-trades]   Stage 1 demo: 1,000 seeded orders matched, then an
+ *                                artificial triangular arbitrage detected
+ *   run.sh accounts [FILE]       load an accounts file in a fresh JVM and print it
+ *                                (default data/accounts.jsonl)
+ *   run.sh archive [DIR]         decode a Logbook archive and summarise it
+ *                                (default data/logbook)
+ *   run.sh structures            Stage 0 smoke run of the six structures
+ * </pre>
  */
 public final class Main {
   private Main() {
   }
 
-  public static void main(String[] args) {
-    String cmd = args.length == 0 ? "structures" : args[0];
-    if (!cmd.equals("structures")) {
-      System.err.println("usage: run.sh [structures]");
-      System.exit(2);
+  public static void main(String[] args) throws IOException {
+    String cmd = args.length == 0 ? "" : args[0];
+    switch (cmd) {
+      case "demo":
+        boolean all = args.length > 1 && args[1].equals("--all-trades");
+        if (args.length > (all ? 2 : 1)) usage();
+        Demo.run(all);
+        break;
+      case "accounts":
+        accounts(Paths.get(args.length > 1 ? args[1] : "data/accounts.jsonl"));
+        break;
+      case "archive":
+        archive(Paths.get(args.length > 1 ? args[1] : "data/logbook"));
+        break;
+      case "structures":
+        structures();
+        break;
+      default:
+        usage();
     }
-    structures();
+  }
+
+  private static void usage() {
+    System.err.println("usage: run.sh demo [--all-trades] | accounts [FILE] | archive [DIR]"
+        + " | structures");
+    System.exit(2);
+  }
+
+  /** Loads the accounts file through a fresh Vault (the restart path) and prints it. */
+  private static void accounts(Path file) throws IOException {
+    if (!Files.exists(file)) {
+      System.err.println("no accounts file at " + file);
+      System.exit(1);
+    }
+    Vault vault = new Vault(file, Vault.DEFAULT_CACHE_CAPACITY);
+    long total = 0;
+    for (int i = 0; i < vault.size(); i++) {
+      Account a = vault.accountAt(i);
+      System.out.println("trader " + a.traderId() + "  cash " + a.cash() + "  marginLimit "
+          + a.marginLimit());
+      total += a.cash();
+    }
+    System.out.println(vault.size() + " accounts loaded from " + file + ", total cash " + total);
+  }
+
+  /** Decodes every archive segment and prints a summary. */
+  private static void archive(Path dir) throws IOException {
+    byte[] records = Logbook.readArchive(dir);
+    int lines = 0;
+    for (byte b : records) {
+      if (b == '\n') lines++;
+    }
+    System.out.println(dir + ": " + lines + " trade records, " + records.length
+        + " bytes decoded, fnv64=" + Demo.hex(Demo.fnv(records)));
+    String text = new String(records, StandardCharsets.US_ASCII);
+    int shown = 0;
+    for (int i = 0, from = 0; i < text.length() && shown < 3; i++) {
+      if (text.charAt(i) == '\n') {
+        System.out.println("  " + text.substring(from, i));
+        from = i + 1;
+        shown++;
+      }
+    }
   }
 
   private static void structures() {
@@ -36,7 +108,7 @@ public final class Main {
     OrderIndex index = new OrderIndex();
     long[][] resting = { {1, 10_050, 5}, {2, 10_050, 7}, {3, 10_052, 4}, {4, 10_049, 9} };
     for (long[] r : resting) {
-      Order o = new Order(r[0], r[2]);
+      Order o = new Order(r[0], 0, Side.SELL, 1, r[1], r[2], r[0]);
       asks.getOrCreate(r[1]).append(o);
       index.put(o);
     }
