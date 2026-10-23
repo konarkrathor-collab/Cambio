@@ -4,6 +4,8 @@
 #                        must pass the benchmark's own correctness gate (plus unit tests)
 #   ./test.sh --timing   the same, then production-vs-benchmark timings (same JVM,
 #                        interleaved round-robin with the benchmark's harness)
+#   ./test.sh --scan-timing   the same, then the scanner's per-scan time at V=12 and V=20
+#   ./test.sh --only TEXT     run only the checks whose name contains TEXT
 # The benchmark lab (../benchmark) is built first with its own unmodified build.sh and put
 # on the test classpath: its workloads, oracles and gates are the reference.
 set -euo pipefail

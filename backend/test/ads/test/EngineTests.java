@@ -67,6 +67,8 @@ final class EngineTests {
         EngineTests::badPrice);
     r.check("rejection: NO_LIQUIDITY (market order on an empty opposite side)",
         EngineTests::noLiquidity);
+    r.check("reject precedence: every pair of checks failing together, 3- and 4-way failures,"
+        + " and a fix-one-at-a-time ladder", EngineTests::rejectPrecedence);
     r.check("rejection: MARGIN (buy over cash, buy over margin, sell over margin, no account,"
         + " market checked at best opposite)", EngineTests::margin);
     r.check("settlement moves notional buyer -> seller; self-trade allowed",
@@ -528,6 +530,85 @@ final class EngineTests {
         expect(f.market(10, Side.BUY, 5).status() == OrderStatus.FILLED,
             "5 x best ask 200 = 1000 is allowed"),
         f.invariants());
+  }
+
+  /**
+   * Appendix A precedence: UNKNOWN_PAIR, BAD_QUANTITY, BAD_PRICE (limit only), NO_LIQUIDITY
+   * (market only), MARGIN; the first failure wins. For every pair of checks that can fail
+   * on the same order there is a case failing EXACTLY those two, so swapping any two lines
+   * of MatchingEngine.validate changes at least one outcome. BAD_PRICE and NO_LIQUIDITY
+   * can never fail together (one is limit-only, the other market-only), so their relative
+   * order is unobservable by construction.
+   */
+  private static TestRunner.Result rejectPrecedence() {
+    Fixture f = new Fixture();
+    f.vault.open(30, 10, 10); // margin binds almost everything
+    f.limit(1, Side.SELL, 100, 50); // EUR/USD: asks only, so a market SELL has no liquidity
+    final long none = 999;       // no account
+    final long ok = 1;
+    final String bad = "XXX/YYY";
+    final long tooBig = MatchingEngine.MAX_QUANTITY + 1;
+    Object[][] cases = {
+        // pair, side, type, price, qty, trader, expected, what fails
+        { bad, Side.BUY, OrderType.LIMIT, 100L, 0L, ok, RejectReason.UNKNOWN_PAIR, "pair+qty" },
+        { bad, Side.BUY, OrderType.LIMIT, 0L, 5L, ok, RejectReason.UNKNOWN_PAIR, "pair+price" },
+        { bad, Side.SELL, OrderType.MARKET, 0L, 5L, ok, RejectReason.UNKNOWN_PAIR,
+            "pair+liquidity" },
+        { bad, Side.BUY, OrderType.LIMIT, 100L, 5L, none, RejectReason.UNKNOWN_PAIR,
+            "pair+margin" },
+        { EURUSD, Side.BUY, OrderType.LIMIT, 0L, 0L, ok, RejectReason.BAD_QUANTITY, "qty+price" },
+        { EURUSD, Side.SELL, OrderType.MARKET, 0L, 0L, ok, RejectReason.BAD_QUANTITY,
+            "qty+liquidity" },
+        { EURUSD, Side.BUY, OrderType.LIMIT, 100L, 0L, none, RejectReason.BAD_QUANTITY,
+            "qty+margin (no account)" },
+        { EURUSD, Side.BUY, OrderType.LIMIT, 100L, tooBig, 30L, RejectReason.BAD_QUANTITY,
+            "qty+margin (exposure)" },
+        { EURUSD, Side.BUY, OrderType.LIMIT, 0L, 5L, none, RejectReason.BAD_PRICE,
+            "price+margin (no account)" },
+        { EURUSD, Side.SELL, OrderType.LIMIT, MatchingEngine.MAX_PRICE_TICK + 1, 5L, 30L,
+            RejectReason.BAD_PRICE, "price+margin (exposure)" },
+        { EURUSD, Side.SELL, OrderType.MARKET, 0L, 5L, none, RejectReason.NO_LIQUIDITY,
+            "liquidity+margin (no account)" },
+        { "USD/JPY", Side.BUY, OrderType.MARKET, 0L, 1_000_000L, 30L, RejectReason.NO_LIQUIDITY,
+            "liquidity+margin (exposure)" },
+        // three and four failures at once
+        { bad, Side.BUY, OrderType.LIMIT, 0L, 0L, none, RejectReason.UNKNOWN_PAIR,
+            "pair+qty+price+margin" },
+        { bad, Side.SELL, OrderType.MARKET, 0L, -3L, none, RejectReason.UNKNOWN_PAIR,
+            "pair+qty+liquidity+margin" },
+        { EURUSD, Side.BUY, OrderType.LIMIT, -1L, tooBig, none, RejectReason.BAD_QUANTITY,
+            "qty+price+margin" },
+        { EURUSD, Side.SELL, OrderType.MARKET, 0L, 0L, none, RejectReason.BAD_QUANTITY,
+            "qty+liquidity+margin" },
+        // one failure each (sanity)
+        { EURUSD, Side.BUY, OrderType.LIMIT, 100L, 5L, none, RejectReason.MARGIN, "margin" },
+        { EURUSD, Side.BUY, OrderType.MARKET, 0L, 1_000_000L, 30L, RejectReason.MARGIN,
+            "margin (market, at best ask)" },
+    };
+    for (Object[] c : cases) {
+      OrderResult r = f.eng.submit((Long) c[5], (String) c[0], (Side) c[1], (OrderType) c[2],
+          (Long) c[3], (Long) c[4]);
+      if (r.status() != OrderStatus.REJECTED || r.rejectReason() != c[6]) {
+        return TestRunner.Result.fail(c[7] + ": expected " + c[6] + ", got " + r.status()
+            + "/" + r.rejectReason());
+      }
+    }
+    // fix-one-at-a-time ladder: each fix exposes the next reason in precedence order
+    String[] pair = { bad, EURUSD, EURUSD, EURUSD, EURUSD };
+    long[] qty = { 0, 0, 5, 5, 5 };
+    long[] price = { 0, 0, 0, 100, 100 };
+    long[] trader = { none, none, none, none, ok };
+    RejectReason[] want = { RejectReason.UNKNOWN_PAIR, RejectReason.BAD_QUANTITY,
+        RejectReason.BAD_PRICE, RejectReason.MARGIN, null };
+    for (int i = 0; i < want.length; i++) {
+      OrderResult r =
+          f.eng.submit(trader[i], pair[i], Side.BUY, OrderType.LIMIT, price[i], qty[i]);
+      if (r.rejectReason() != want[i]) {
+        return TestRunner.Result.fail("ladder step " + i + ": expected " + want[i] + ", got "
+            + r.status() + "/" + r.rejectReason());
+      }
+    }
+    return TestRunner.Result.pass(cases.length + " multi-failure cases + 5-step ladder");
   }
 
   private static TestRunner.Result settlementAndSelfTrade() {

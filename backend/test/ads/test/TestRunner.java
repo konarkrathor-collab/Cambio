@@ -36,6 +36,7 @@ public final class TestRunner {
 
   private int passed;
   private int failed;
+  private String only; // run only checks whose name contains this, if set
 
   void section(String title) {
     System.out.println();
@@ -43,6 +44,7 @@ public final class TestRunner {
   }
 
   void check(String name, Check c) {
+    if (only != null && !name.contains(only)) return;
     long t0 = System.nanoTime();
     Result r;
     try {
@@ -59,15 +61,22 @@ public final class TestRunner {
 
   public static void main(String[] args) throws Exception {
     boolean timing = false;
-    for (String a : args) {
-      if (a.equals("--timing")) {
+    boolean scanTiming = false;
+    String only = null;
+    for (int i = 0; i < args.length; i++) {
+      if (args[i].equals("--timing")) {
         timing = true;
+      } else if (args[i].equals("--scan-timing")) {
+        scanTiming = true;
+      } else if (args[i].equals("--only") && i + 1 < args.length) {
+        only = args[++i];
       } else {
-        System.err.println("usage: test.sh [--timing]");
+        System.err.println("usage: test.sh [--timing] [--scan-timing] [--only NAME-SUBSTRING]");
         System.exit(2);
       }
     }
     TestRunner r = new TestRunner();
+    r.only = only;
     ParityTests.run(r);
     UnitTests.run(r);
     EngineTests.run(r);
@@ -79,6 +88,9 @@ public final class TestRunner {
     }
     if (timing) {
       TimingComparison.run();
+    }
+    if (scanTiming) {
+      ScannerTiming.run();
     }
   }
 }

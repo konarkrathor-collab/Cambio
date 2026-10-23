@@ -4,7 +4,8 @@ import ads.directory.Directory;
 
 /**
  * The currency-loophole scanner (doc 06, doc 08 Stage 1): a rate store over the
- * Directory's 12 currencies plus a Bellman-Ford scan.
+ * Directory's 12 currencies (or any currency list that includes USD) plus a Bellman-Ford
+ * scan.
  *
  * <p><b>Rates.</b> {@code rate[from][to]} = units of {@code to} per one {@code from}
  * (Appendix B: tick {@code EUR_USD 1.0852} means 1 EUR = 1.0852 USD). A tick sets both
@@ -30,16 +31,20 @@ import ads.directory.Directory;
  *       than L edges earning at least t, as long as Bellman-Ford returns it.</li>
  * </ul>
  *
+ * <p>Before those, one pass on the unshifted weights: shifting only raises weights, so if
+ * that pass finds no negative cycle, none of the shifted passes can, and the scan stops
+ * there (one Bellman-Ford run instead of V). The result is identical either way.
+ *
  * <p>Exact detection of "some simple cycle earns at least t" is NP-hard in general (it
  * contains the longest-path problem); the gap above is the documented price of a scan that
- * costs about (V+1) x V x E relaxations. Doubles are fine here: no order is priced or
+ * costs at most (V+1) x V x E relaxations. Doubles are fine here: no order is priced or
  * matched in the scanner.
  */
 public final class ArbitrageScanner {
   /** Minimum profit, in percent, for a cycle to count as arbitrage (doc 08: 0.001%). */
   public static final double DEFAULT_MIN_PROFIT_PERCENT = 0.001;
 
-  private final Directory directory;
+  private final String[] currencies;
   private final int n;
   private final int usd;
   private final double[][] rate;
@@ -52,12 +57,26 @@ public final class ArbitrageScanner {
   }
 
   public ArbitrageScanner(Directory directory, double minProfitPercent) {
+    this(currenciesOf(directory), minProfitPercent);
+  }
+
+  private static String[] currenciesOf(Directory directory) {
+    String[] codes = new String[directory.currencyCount()];
+    for (int i = 0; i < codes.length; i++) codes[i] = directory.currency(i);
+    return codes;
+  }
+
+  /** A scanner over any list of three-letter currency codes; it must include USD. */
+  public ArbitrageScanner(String[] currencyCodes, double minProfitPercent) {
     if (!(minProfitPercent >= 0)) {
       throw new IllegalArgumentException("minProfitPercent must be >= 0: " + minProfitPercent);
     }
-    this.directory = directory;
-    this.n = directory.currencyCount();
-    this.usd = directory.currencyId("USD");
+    this.currencies = currencyCodes.clone();
+    this.n = currencies.length;
+    this.usd = currencyId("USD");
+    if (usd < 0) {
+      throw new IllegalArgumentException("the currency list must include USD");
+    }
     this.rate = new double[n][n];
     this.direct = new boolean[n][n];
     this.minProfitPercent = minProfitPercent;
@@ -68,9 +87,11 @@ public final class ArbitrageScanner {
 
   /** Applies a tick for "BASE/QUOTE" ({@code 1 BASE = price QUOTE}); false if unknown pair. */
   public boolean onTick(String pair, double price) {
-    int id = directory.pairId(pair);
-    if (id < 0) return false;
-    onTick(directory.baseCurrency(id), directory.quoteCurrency(id), price);
+    if (pair == null || pair.length() != 7 || pair.charAt(3) != '/') return false;
+    int base = currencyId(pair.substring(0, 3));
+    int quote = currencyId(pair.substring(4));
+    if (base < 0 || quote < 0 || base == quote) return false;
+    onTick(base, quote, price);
     return true;
   }
 
@@ -103,6 +124,22 @@ public final class ArbitrageScanner {
         rate[a][b] = ua > 0 && ub > 0 ? ub / ua : Double.NaN;
       }
     }
+  }
+
+  /** Index of a currency code, or -1. */
+  public int currencyId(String code) {
+    for (int i = 0; i < currencies.length; i++) {
+      if (currencies[i].equals(code)) return i;
+    }
+    return -1;
+  }
+
+  public int currencyCount() {
+    return n;
+  }
+
+  public String currency(int id) {
+    return currencies[id];
   }
 
   /** Units of {@code to} per one {@code from}, or NaN if unknown. */
@@ -141,6 +178,13 @@ public final class ArbitrageScanner {
         }
       }
     }
+    // Base pass on the unshifted weights. Every shifted weight is >= its base weight, so
+    // if the base graph has no negative cycle no shifted pass can find one: the common
+    // no-arbitrage case costs one Bellman-Ford run instead of V.
+    bf.build(n, from, to, base);
+    if (!bf.hasNegativeCycle()) {
+      return new ScanResult(false, null, 1.0, 0.0, edges, false);
+    }
     double gain = Math.log1p(minProfitPercent / 100.0);
     double[] weight = new double[edges];
     int[] best = null;
@@ -168,7 +212,7 @@ public final class ArbitrageScanner {
       return new ScanResult(false, null, 1.0, 0.0, edges, sawBelow);
     }
     String[] names = new String[best.length];
-    for (int i = 0; i < best.length; i++) names[i] = directory.currency(best[i]);
+    for (int i = 0; i < best.length; i++) names[i] = currencies[best[i]];
     return new ScanResult(true, names, bestMultiplier, (bestMultiplier - 1.0) * 100.0, edges,
         false);
   }

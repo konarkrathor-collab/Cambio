@@ -70,36 +70,14 @@ public final class MatchingEngine {
     }
     long orderId = nextOrderId++;
     long now = ++seq;
-    if (pairId < 0 || pairId >= books.length) {
-      return reject(orderId, RejectReason.UNKNOWN_PAIR);
-    }
-    if (quantity <= 0 || quantity > MAX_QUANTITY) {
-      return reject(orderId, RejectReason.BAD_QUANTITY);
-    }
-    if (type == OrderType.LIMIT && (priceTick <= 0 || priceTick > MAX_PRICE_TICK)) {
-      return reject(orderId, RejectReason.BAD_PRICE);
+    RejectReason reason = validate(traderId, pairId, side, type, priceTick, quantity);
+    if (reason != null) {
+      return reject(orderId, reason);
     }
     OrderBook book = books[pairId];
     boolean buy = side == Side.BUY;
     PriceLadder opposite = buy ? book.asks : book.bids;
-
-    long checkTick = priceTick;
-    if (type == OrderType.MARKET) {
-      PriceLevel best = buy ? opposite.lowest() : opposite.highest();
-      if (best == null) {
-        return reject(orderId, RejectReason.NO_LIQUIDITY);
-      }
-      checkTick = best.price;
-    }
     Account account = vault.account(traderId);
-    if (account == null) {
-      return reject(orderId, RejectReason.MARGIN);
-    }
-    long exposure = quantity * checkTick; // both bounded by 1e9: cannot overflow
-    long allowed = buy ? Math.min(account.cash(), account.marginLimit()) : account.marginLimit();
-    if (exposure > allowed) {
-      return reject(orderId, RejectReason.MARGIN);
-    }
 
     long remaining = quantity;
     int tradeCount = 0;
@@ -157,6 +135,59 @@ public final class MatchingEngine {
     index.put(resting);
     return new OrderResult(orderId, filled > 0 ? OrderStatus.PARTIAL : OrderStatus.QUEUED,
         null, filled, remaining, trades);
+  }
+
+  /**
+   * Appendix A validation precedence: the first failing check wins. One self-contained
+   * check per line, in the normative order; each helper is total (no exceptions on invalid
+   * input), so the order of the lines alone decides which reason an order that is wrong
+   * in several ways gets.
+   */
+  private RejectReason validate(long traderId, int pairId, Side side, OrderType type,
+      long priceTick, long quantity) {
+    if (!knownPair(pairId)) return RejectReason.UNKNOWN_PAIR;
+    if (quantity <= 0 || quantity > MAX_QUANTITY) return RejectReason.BAD_QUANTITY;
+    if (type == OrderType.LIMIT && (priceTick <= 0 || priceTick > MAX_PRICE_TICK)) return RejectReason.BAD_PRICE;
+    if (type == OrderType.MARKET && bestOpposite(pairId, side) == null) return RejectReason.NO_LIQUIDITY;
+    if (!withinMargin(traderId, pairId, side, type, priceTick, quantity)) return RejectReason.MARGIN;
+    return null;
+  }
+
+  private boolean knownPair(int pairId) {
+    return pairId >= 0 && pairId < books.length;
+  }
+
+  /** Best level on the side an order of {@code side} trades against, or null. */
+  private PriceLevel bestOpposite(int pairId, Side side) {
+    if (!knownPair(pairId)) return null;
+    OrderBook book = books[pairId];
+    return side == Side.BUY ? book.asks.lowest() : book.bids.highest();
+  }
+
+  /**
+   * Appendix A margin: a BUY needs {@code qty x tick <= min(cash, marginLimit)}, a SELL
+   * {@code qty x tick <= marginLimit}; the tick is the limit price, or for a MARKET order
+   * the best opposite price. No account means no margin.
+   */
+  private boolean withinMargin(long traderId, int pairId, Side side, OrderType type,
+      long priceTick, long quantity) {
+    Account account = vault.account(traderId);
+    if (account == null) return false;
+    long tick = priceTick;
+    if (type == OrderType.MARKET) {
+      PriceLevel best = bestOpposite(pairId, side);
+      if (best == null) return true; // that is NO_LIQUIDITY's verdict, not this check's
+      tick = best.price;
+    }
+    long exposure;
+    try {
+      exposure = Math.multiplyExact(quantity, tick); // cannot overflow once quantity/price pass
+    } catch (ArithmeticException overflow) {
+      return false;
+    }
+    long allowed = side == Side.BUY ? Math.min(account.cash(), account.marginLimit())
+        : account.marginLimit();
+    return exposure <= allowed;
   }
 
   private OrderResult reject(long orderId, RejectReason reason) {
