@@ -2,6 +2,8 @@
 
 This document specs the service that bridges real-world currency data into the Currency Loophole Detector. It does **not** feed the Order Matching Engine — per the architectural discussion that produced this doc, the matching engine operates on synthetic/simulated order flow by design (it *is* the exchange; it doesn't consume one), so this ingestion service is scoped entirely to the arbitrage-detection subsystem.
 
+**Stack revision (faculty-confirmed):** the ingestion service is now a standalone **Python process** (`feed/feed.py`) that only fetches Finnhub ticks and Frankfurter snapshots and **forwards** them to the Java backend by `POST /api/market/rates` (payloads in doc 08, Appendix B). All computation described below — cross-rate derivation, graph construction, staleness decisions, the throttled Bellman-Ford scan, the status endpoint — happens in the **Java** backend. Reconnect/backoff and the Frankfurter fallback live in the Python feed, with the thresholds in §5 unchanged. See [08_build_plan_and_acceptance.md](./08_build_plan_and_acceptance.md) Stage 2.
+
 **Revision note:** the original version of this spec used a free daily-snapshot API (Frankfurter) plus a synthetic "jitter" layer to fake movement between snapshots. We've replaced that with **Finnhub's real-time forex WebSocket feed** (sourced from OANDA), which pushes genuine live ticks — so the synthetic jitter engine, mean-reversion math, and bid/ask-spread modeling from the earlier version are **no longer needed and have been removed**. The live movement on the dashboard is now real market data, not a simulation of it.
 
 ---

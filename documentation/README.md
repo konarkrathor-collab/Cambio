@@ -24,6 +24,7 @@ Welcome to the technical documentation repository for the **Advanced Data Struct
 | **[05_data_structure_selection_rationale.md](./05_data_structure_selection_rationale.md)** | Data Structure Selection Rationale (Why) | Comparative market survey, weighted scoring rubric, rejected alternatives per subsystem |
 | **[06_market_data_ingestion_service.md](./06_market_data_ingestion_service.md)** | Market Data Ingestion Service | Real-time forex via Finnhub WebSocket (OANDA feed), reconnect/fallback handling, cross-rate derivation |
 | **[07_team_workplan_and_phases.md](./07_team_workplan_and_phases.md)** | Team Workplan & Execution Phases | Locked data structure list, backend module breakdown, three-person vertical ownership split, Phase 2–7 plan |
+| **[08_build_plan_and_acceptance.md](./08_build_plan_and_acceptance.md)** | Build Plan & Acceptance Gates | Confirmed stack (Java / Python feed / React), repository layout, rules, Stage 0–7 plan with verification gates, matching rules and feed payloads |
 
 ---
 

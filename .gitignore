@@ -9,7 +9,14 @@ Thumbs.db
 
 # Java build output
 benchmark/out/
+backend/out/
+backend/data/
 *.class
+
+# Python feed
+feed/.venv/
+__pycache__/
+*.pyc
 
 # Node (once backend/frontend exist)
 node_modules/

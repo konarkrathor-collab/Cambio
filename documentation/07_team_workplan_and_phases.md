@@ -4,6 +4,8 @@ This document turns the validated data structure choices (doc 05) and system arc
 
 ---
 
+> **Stack and stage update:** the stack is now fixed as Java backend, Python data feed, React dashboard, and the stage-by-stage build and acceptance process is in [08_build_plan_and_acceptance.md](./08_build_plan_and_acceptance.md). The vertical slices below still apply to *ownership and explanation*: Slice B's Live Feed is the Python `feed/` process, and each slice's webpage is a React view.
+
 ## 1. Status: the data structure question is closed — except one flagged tension
 
 Every pick below was benchmarked from scratch against every realistic alternative (see `benchmark/results/RESULTS.md`, Runs 1–13, and doc 05's "Benchmark Evidence" subsections). This is no longer a design-stage prediction — it is a measured result. Five of the six picks are settled; the price-ladder pick has one open tension from Run 13a (see the note under the table) that the team should resolve at the sync. Beyond that, nothing in Phases 2 onward should re-open this question.

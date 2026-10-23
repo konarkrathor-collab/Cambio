@@ -1,5 +1,7 @@
 # System Architecture & Design Specification
 
+> **Stack revision (faculty-confirmed):** the backend is **Java**, the data feed is a separate **Python** process that only fetches and forwards rates, and the dashboard is **React**. Two consequences for this document: browser push uses **Server-Sent Events** (`GET /api/stream`) instead of the WebSocket server shown below, and the live-rate ingestion described under the API Gateway arrives by `POST /api/market/rates` from the Python feed. [08_build_plan_and_acceptance.md](./08_build_plan_and_acceptance.md) is authoritative where it differs from this page.
+
 ## 1. End-to-End System Architecture
 
 The system is architected as an event-driven, full-stack application composed of three decoupled layers:

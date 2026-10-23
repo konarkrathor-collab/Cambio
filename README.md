@@ -29,7 +29,8 @@ order-matching-arbitrage-detector/
 │   ├── 04_project_roadmap_and_milestones.md   # 14-Week Development Roadmap & Modules
 │   ├── 05_data_structure_selection_rationale.md # Why: Comparative Survey, Now Benchmark-Verified
 │   ├── 06_market_data_ingestion_service.md    # Real-Time Forex via Finnhub WebSocket + Fallback
-│   └── 07_team_workplan_and_phases.md         # Team Split, Backend Modules & Execution Phases
+│   ├── 07_team_workplan_and_phases.md         # Team Split, Backend Modules & Execution Phases
+│   └── 08_build_plan_and_acceptance.md        # Stack, Stage 0-7 Build Plan & Acceptance Gates
 └── benchmark/                                 # Benchmark lab: measured evidence behind doc 05
     ├── README.md                              # Pipeline, fairness rules, how to build & run
     ├── HANDOFF_DEEPSEEK.md                    # Original task brief for the benchmark modules
