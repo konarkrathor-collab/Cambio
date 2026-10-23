@@ -104,7 +104,9 @@ req GET  /api/arbitrage/graph                200 "" '"cycle":\['
 req GET  /api/simulate/last                  404 "" '"NO_SIMULATION"'
 req POST /api/simulate                       200 '{"numOrders":20000,"seed":42}' '"checksumMatch":true'
 req POST /api/simulate                       400 '{"numOrders":0}' '"BAD_REQUEST"'
-req GET  /api/simulate/last                  200 "" '"numOrders":20000'
+req POST /api/simulate                       200 '{"numOrders":5000,"profile":"deep"}' '"cashMatch":true'
+req POST /api/simulate                       400 '{"numOrders":200001,"profile":"deep"}' '"BAD_REQUEST"'
+req GET  /api/simulate/last                  200 "" '"profile":"deep"'
 req GET  /api/nope                           404 "" '"NOT_FOUND"'
 
 # CORS preflight from the Vite dev origin, and from an origin that is not allowed

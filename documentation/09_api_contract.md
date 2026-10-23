@@ -160,8 +160,9 @@ Request (JSON; every field optional; an empty body means all defaults; unknown f
 | `baseline` | boolean | true | | Also replay the stream on the naive matcher and compare. |
 | `scanEvery` | integer | 100 | 0 … 1,000,000 | One arbitrage scan on synthetic rates after every that many operations; 0 disables scans. |
 | `rateVolatility` | number | 0.01 | 0 … 1 | Percent per step for the synthetic rates (see below). |
+| `profile` | string | `"shallow"` | `"shallow"`, `"deep"` (case-insensitive) | The order mix (below). Added at the Stage 4 addendum. **With `"deep"` and `baseline` true, `numOrders` is capped at 200,000** (400 `BAD_REQUEST` above it), because the naive matcher costs O(resting orders) per operation. With `baseline` false the usual 1,000,000 applies. |
 
-**The stream** (`backend/src/ads/sim/OrderGenerator.java` documents it in full). Each operation is independently: 55% a LIMIT order on one of EUR/USD, GBP/USD, USD/JPY, EUR/GBP, AUD/USD, USD/CHF, BUY or SELL, priced uniformly within ±10 ticks of a fixed mid, with quantity 1–100, so orders cross constantly; 15% a MARKET order with quantity 1–50; 20% a cancel of an order that is resting at that moment (id 0, which misses, if none rests); 10% an invalid order, spread evenly over unknown pair, quantity 0, quantity 10⁹+1, LIMIT price 0, and a trader with no account. These cover the rejection paths (`UNKNOWN_PAIR`, `BAD_QUANTITY`, `BAD_PRICE`, `MARGIN`), and `NO_LIQUIDITY` comes from market orders on an empty side. **Synthetic rates:** before each scan, every currency's USD rate takes a uniform random step of up to `rateVolatility` percent. Each of the 66 currency pairs is then quoted at the cross of those rates times its own fresh jitter of the same size. There is no bid/ask spread, so at the default volatility nearly every scan finds a cycle; at 0 none does. The scans use the server's `--min-profit` threshold.
+**The stream** (`backend/src/ads/sim/OrderGenerator.java` documents both profiles in full). **`shallow`** (the default, unchanged since Stage 4; the same seed gives the same stream as before the field existed). Each operation is independently: 55% a LIMIT order on one of EUR/USD, GBP/USD, USD/JPY, EUR/GBP, AUD/USD, USD/CHF, BUY or SELL, priced uniformly within ±10 ticks of a fixed mid, with quantity 1–100, so orders cross constantly; 15% a MARKET order with quantity 1–50; 20% a cancel of an order that is resting at that moment (id 0, which misses, if none rests); 10% an invalid order, spread evenly over unknown pair, quantity 0, quantity 10⁹+1, LIMIT price 0, and a trader with no account. These cover the rejection paths (`UNKNOWN_PAIR`, `BAD_QUANTITY`, `BAD_PRICE`, `MARGIN`), and `NO_LIQUIDITY` comes from market orders on an empty side. **`deep`** keeps the same pairs, mids, traders and invalid kinds, but builds deep books. It has 72% passive LIMIT orders: BUYs at 1–5,000 ticks below the mid and SELLs at 1–5,000 ticks above, so most rest. It also has 10% aggressive LIMIT orders that cross up to 500 ticks into the other side, 3% MARKET orders, 10% cancels of resting orders and 5% invalid orders. Each pair accumulates thousands of resting orders: about 28,000 orders rest in total after 50,000 operations, and about 113,000 after 200,000. **Synthetic rates:** before each scan, every currency's USD rate takes a uniform random step of up to `rateVolatility` percent. Each of the 66 currency pairs is then quoted at the cross of those rates times its own fresh jitter of the same size. There is no bid/ask spread, so at the default volatility nearly every scan finds a cycle; at 0 none does. The scans use the server's `--min-profit` threshold.
 
 **Measurement.** Each submit and each cancel is timed on its own with `System.nanoTime()` around the engine call alone: no HTTP, no JSON, no generator. `durationMs` is the wall time of the order operations only: the clock stops for each rate step and scan. The generator first writes the whole stream untimed. To know which orders are live, it drives a scratch engine as it goes, and that pass also warms the JIT. The baseline gets an untimed warm-up on the first 20,000 operations.
 
@@ -169,7 +170,7 @@ Response (200):
 
 | Field | Meaning |
 | :--- | :--- |
-| `numOrders`, `seed`, `scanEvery`, `rateVolatility` | The parameters used. |
+| `numOrders`, `seed`, `profile`, `scanEvery`, `rateVolatility` | The parameters used (`profile` added at the Stage 4 addendum). |
 | `durationMs` | Order-processing wall time, milliseconds with 3 decimals. |
 | `ordersPerSec` | `numOrders / durationMs` (integer). |
 | `trades` | Fills executed. |
@@ -179,7 +180,8 @@ Response (200):
 | `scans` | `{count, p50Us, p99Us, loopholesFound}`: scans run, their time (as above), and how many reported a cycle. |
 | `tradeChecksum` | FNV-1a 64-bit, as 16 hex digits, over every trade in execution order. Each trade contributes `tradeId, seq, pairId, price ticks, quantity, buyOrderId, sellOrderId, buyerId, sellerId, takerSide (1 = BUY)`, each as 8 little-endian bytes. |
 | `restingOrders` | Orders left on the simulated books at the end. |
-| `baseline` | null when `baseline` is false. Otherwise the same stream replayed on the **naive matcher**: Appendix A over plain arrays. Each pair's resting orders sit in one array in arrival order and are scanned for the best opposite price on every order; a cancel scans every array for the id; there is no tree, index or hash. It has `numOrders, durationMs, ordersPerSec, trades, rejects, cancels, latencyUs, tradeChecksum, restingOrders`, measured the same way, plus `checksumMatch` (its `tradeChecksum` equals the engine's; always true unless one of them is wrong) and `speedup` (engine `ordersPerSec` / baseline `ordersPerSec`, 2 decimals; below 1 means the baseline was faster). |
+| `finalCash`, `finalCashTotal` | Simulation traders 1 to 12's cash at the end, in trader order, and its sum. Every trade moves cash between two of them, so the total is always 12 × 10¹⁵. Added at the Stage 4 addendum. |
+| `baseline` | null when `baseline` is false. Otherwise the same stream replayed on the **naive matcher**: Appendix A over plain arrays. Each pair's resting orders sit in one array in arrival order and are scanned for the best opposite price on every order; a cancel scans every array for the id; there is no tree, index or hash. It has `numOrders, durationMs, ordersPerSec, trades, rejects, cancels, latencyUs, tradeChecksum, restingOrders, finalCash, finalCashTotal`, measured the same way. It also has `tradesMatch` (its `tradeChecksum` equals the engine's), `cashMatch` (every trader's final cash equals the engine's), and `checksumMatch` = `tradesMatch` and `cashMatch`. `checksumMatch` is always true unless one of them is wrong; since the Stage 4 addendum it covers settlement as well as trades. `speedup` is engine `ordersPerSec` / baseline `ordersPerSec`, to 2 decimals; below 1 means the baseline was faster. |
 | `finishedAt` | ISO-8601 UTC. |
 
 The timing fields and `finishedAt` vary between runs. Every other field is a function of the request alone.
@@ -204,7 +206,7 @@ Server-Sent Events (`text/event-stream`; use `new EventSource("/api/stream")`). 
 ## 5. What is deliberately not here
 
 - There is no `GET /api/orders/{id}` and no order history. The book, `GET /api/trades` (the last 500 trades) and the trade stream are the views. Trades are archived in the Logbook (`<data-dir>/logbook`, Huffman segments).
-- Resting orders and the book are per server session; a restart starts with empty books, so cancelling an order from a previous session is 404 `ORDER_NOT_FOUND`. **Order ids, trade ids and `seq` continue across restarts** (Stage 3 addendum; a compatible change). They are kept in `<data-dir>/counters.json` and written with the Vault. After a graceful stop they continue exactly. After a crash they skip ahead by up to 1,000,000 and never repeat. Accounts persist too.
+- Resting orders and the book are per server session; a restart starts with empty books, so cancelling an order from a previous session is 404 `ORDER_NOT_FOUND`. **Order ids, trade ids and `seq` continue across restarts** (Stage 3 addendum; a compatible change). They are kept in `<data-dir>/counters.json` and written with the Vault. After a graceful stop they continue exactly. After a crash they skip ahead by up to 1,000,000 and never repeat. The reserve is written at startup, before the first command, on every flush, and again whenever half of it is used (Stage 4 addendum, B12). Accounts persist too.
 - There is no authentication. The server binds to localhost.
 
 ## 6. Stage 2 payloads (unchanged)
@@ -213,7 +215,7 @@ Doc 08 Appendix B, plus the optional `replay` flag (§3.7).
 
 ## 7. Captured examples
 
-<!-- captured by backend/scripts/contract_examples.sh on 2026-10-23T20:44:07Z -->
+<!-- captured by backend/scripts/contract_examples.sh on 2026-10-23T21:05:54Z -->
 
 ### 7 · Health and directory
 #### Health
@@ -231,7 +233,7 @@ Response: **200**
     "accounts": 12,
     "sseClients": 0,
     "sseDropped": 0,
-    "uptimeMs": 144
+    "uptimeMs": 142
 }
 ```
 
@@ -1267,7 +1269,7 @@ Response: **200**
     "replay": false,
     "connected": true,
     "lastTickAt": "2026-10-23T19:24:28.461Z",
-    "lastPayloadAt": "2026-10-23T20:44:08.252Z",
+    "lastPayloadAt": "2026-10-23T21:05:55.638Z",
     "tickCount": 3,
     "rejectedTicks": 1,
     "payloads": 1,
@@ -1275,7 +1277,7 @@ Response: **200**
     "staleSymbols": [],
     "fallbackAsOf": null,
     "scanCount": 1,
-    "lastScanAt": "2026-10-23T20:44:08.253Z",
+    "lastScanAt": "2026-10-23T21:05:55.639Z",
     "lastScanFoundCycle": true,
     "excludedEdges": 0,
     "minProfitPercent": 0.02,
@@ -1321,7 +1323,7 @@ Response: **200**
     "excludedEdges": 0,
     "belowThreshold": false,
     "scanCount": 1,
-    "scannedAt": "2026-10-23T20:44:08.253Z"
+    "scannedAt": "2026-10-23T21:05:55.639Z"
 }
 ```
 
@@ -1435,7 +1437,7 @@ Response: **200**
         "GBP",
         "USD"
     ],
-    "scannedAt": "2026-10-23T20:44:08.253Z"
+    "scannedAt": "2026-10-23T21:05:55.639Z"
 }
 ```
 
@@ -1521,66 +1523,99 @@ Response: **200**
 {
     "numOrders": 5000,
     "seed": 42,
+    "profile": "shallow",
     "scanEvery": 100,
     "rateVolatility": 0.01,
-    "durationMs": 5.433,
-    "ordersPerSec": 920260,
+    "durationMs": 5.283,
+    "ordersPerSec": 946266,
     "trades": 2291,
     "rejects": 638,
     "cancels": 961,
     "latencyUs": {
         "submit": {
             "count": 4039,
-            "p50": 0.483,
-            "p90": 1.656,
-            "p99": 6.690,
-            "max": 113.680
+            "p50": 0.489,
+            "p90": 1.644,
+            "p99": 7.597,
+            "max": 100.811
         },
         "cancel": {
             "count": 961,
-            "p50": 0.251,
-            "p90": 0.408,
-            "p99": 1.978,
-            "max": 225.062
+            "p50": 0.265,
+            "p90": 0.431,
+            "p99": 2.032,
+            "max": 38.321
         }
     },
     "scans": {
         "count": 50,
-        "p50Us": 212.253,
-        "p99Us": 1450.465,
+        "p50Us": 209.562,
+        "p99Us": 958.979,
         "loopholesFound": 50
     },
     "tradeChecksum": "cf084b63dbf339ae",
     "restingOrders": 46,
+    "finalCash": [
+        999999937033782,
+        999999992644080,
+        999999829623829,
+        1000000033318809,
+        1000000108335735,
+        1000000073574965,
+        999999938868284,
+        1000000103978858,
+        999999971361283,
+        999999959992837,
+        1000000136893097,
+        999999914374441
+    ],
+    "finalCashTotal": 12000000000000000,
     "baseline": {
         "numOrders": 5000,
-        "durationMs": 3.802,
-        "ordersPerSec": 1314983,
+        "durationMs": 4.878,
+        "ordersPerSec": 1025002,
         "trades": 2291,
         "rejects": 638,
         "cancels": 961,
         "latencyUs": {
             "submit": {
                 "count": 4039,
-                "p50": 0.521,
-                "p90": 1.090,
-                "p99": 1.796,
-                "max": 66.225
+                "p50": 0.447,
+                "p90": 1.043,
+                "p99": 2.138,
+                "max": 252.006
             },
             "cancel": {
                 "count": 961,
-                "p50": 0.421,
-                "p90": 0.685,
-                "p99": 0.913,
-                "max": 32.348
+                "p50": 0.468,
+                "p90": 0.731,
+                "p99": 1.617,
+                "max": 853.275
             }
         },
         "tradeChecksum": "cf084b63dbf339ae",
         "restingOrders": 46,
+        "finalCash": [
+            999999937033782,
+            999999992644080,
+            999999829623829,
+            1000000033318809,
+            1000000108335735,
+            1000000073574965,
+            999999938868284,
+            1000000103978858,
+            999999971361283,
+            999999959992837,
+            1000000136893097,
+            999999914374441
+        ],
+        "finalCashTotal": 12000000000000000,
+        "tradesMatch": true,
+        "cashMatch": true,
         "checksumMatch": true,
-        "speedup": 0.70
+        "speedup": 0.92
     },
-    "finishedAt": "2026-10-23T20:44:08.420614050Z"
+    "finishedAt": "2026-10-23T21:05:55.822142745Z"
 }
 ```
 
@@ -1604,27 +1639,28 @@ Response: **200**
 {
     "numOrders": 20000,
     "seed": 7,
+    "profile": "shallow",
     "scanEvery": 0,
     "rateVolatility": 0,
-    "durationMs": 12.060,
-    "ordersPerSec": 1658273,
+    "durationMs": 18.556,
+    "ordersPerSec": 1077790,
     "trades": 9179,
     "rejects": 2632,
     "cancels": 3906,
     "latencyUs": {
         "submit": {
             "count": 16093,
-            "p50": 0.398,
-            "p90": 0.802,
-            "p99": 1.535,
-            "max": 155.322
+            "p50": 0.647,
+            "p90": 1.248,
+            "p99": 2.366,
+            "max": 73.735
         },
         "cancel": {
             "count": 3907,
-            "p50": 0.221,
-            "p90": 0.279,
-            "p99": 0.617,
-            "max": 29.641
+            "p50": 0.369,
+            "p90": 0.527,
+            "p99": 0.970,
+            "max": 57.662
         }
     },
     "scans": {
@@ -1635,8 +1671,138 @@ Response: **200**
     },
     "tradeChecksum": "64c7ea816eef6250",
     "restingOrders": 30,
+    "finalCash": [
+        999999912090010,
+        999999926400258,
+        1000000143119420,
+        1000000029571550,
+        1000000111496759,
+        999999848798053,
+        999999939246851,
+        1000000081640641,
+        1000000053323587,
+        999999945429053,
+        999999907205447,
+        1000000101678371
+    ],
+    "finalCashTotal": 12000000000000000,
     "baseline": null,
-    "finishedAt": "2026-10-23T20:44:08.467081744Z"
+    "finishedAt": "2026-10-23T21:05:55.882924519Z"
+}
+```
+
+#### Deep profile (books grow deep; the baseline's linear scan pays for it)
+
+```http
+POST /api/simulate
+```
+```json
+{
+    "numOrders": 20000,
+    "seed": 42,
+    "profile": "deep",
+    "scanEvery": 0
+}
+```
+Response: **200**
+
+```json
+{
+    "numOrders": 20000,
+    "seed": 42,
+    "profile": "deep",
+    "scanEvery": 0,
+    "rateVolatility": 0.01,
+    "durationMs": 25.020,
+    "ordersPerSec": 799344,
+    "trades": 3655,
+    "rejects": 999,
+    "cancels": 1961,
+    "latencyUs": {
+        "submit": {
+            "count": 18039,
+            "p50": 0.664,
+            "p90": 1.280,
+            "p99": 4.384,
+            "max": 1444.789
+        },
+        "cancel": {
+            "count": 1961,
+            "p50": 0.675,
+            "p90": 1.052,
+            "p99": 2.978,
+            "max": 39.029
+        }
+    },
+    "scans": {
+        "count": 0,
+        "p50Us": 0.000,
+        "p99Us": 0.000,
+        "loopholesFound": 0
+    },
+    "tradeChecksum": "af8471b32b28a9bf",
+    "restingOrders": 11397,
+    "finalCash": [
+        999999929432684,
+        1000000092846023,
+        1000000044451972,
+        999999972318864,
+        1000000041908203,
+        999999886518768,
+        1000000119326221,
+        1000000033789021,
+        999999991163546,
+        999999973556519,
+        999999992018396,
+        999999922669783
+    ],
+    "finalCashTotal": 12000000000000000,
+    "baseline": {
+        "numOrders": 20000,
+        "durationMs": 151.824,
+        "ordersPerSec": 131731,
+        "trades": 3655,
+        "rejects": 999,
+        "cancels": 1961,
+        "latencyUs": {
+            "submit": {
+                "count": 18039,
+                "p50": 6.802,
+                "p90": 16.471,
+                "p99": 28.381,
+                "max": 84.800
+            },
+            "cancel": {
+                "count": 1961,
+                "p50": 3.000,
+                "p90": 9.086,
+                "p99": 13.528,
+                "max": 41.370
+            }
+        },
+        "tradeChecksum": "af8471b32b28a9bf",
+        "restingOrders": 11397,
+        "finalCash": [
+            999999929432684,
+            1000000092846023,
+            1000000044451972,
+            999999972318864,
+            1000000041908203,
+            999999886518768,
+            1000000119326221,
+            1000000033789021,
+            999999991163546,
+            999999973556519,
+            999999992018396,
+            999999922669783
+        ],
+        "finalCashTotal": 12000000000000000,
+        "tradesMatch": true,
+        "cashMatch": true,
+        "checksumMatch": true,
+        "speedup": 6.07
+    },
+    "finishedAt": "2026-10-23T21:05:56.297226341Z"
 }
 ```
 
@@ -1661,6 +1827,28 @@ Response: **400**
 }
 ```
 
+#### Deep with the baseline above its cap
+
+```http
+POST /api/simulate
+```
+```json
+{
+    "numOrders": 200001,
+    "profile": "deep"
+}
+```
+Response: **400**
+
+```json
+{
+    "error": {
+        "code": "BAD_REQUEST",
+        "message": "a deep run with the baseline is capped at 200000 orders (the naive matcher costs O(resting orders) per operation); lower numOrders or set baseline to false"
+    }
+}
+```
+
 #### Last result (the most recent simulation, as returned)
 
 ```http
@@ -1671,28 +1859,29 @@ Response: **200**
 ```json
 {
     "numOrders": 20000,
-    "seed": 7,
+    "seed": 42,
+    "profile": "deep",
     "scanEvery": 0,
-    "rateVolatility": 0,
-    "durationMs": 12.060,
-    "ordersPerSec": 1658273,
-    "trades": 9179,
-    "rejects": 2632,
-    "cancels": 3906,
+    "rateVolatility": 0.01,
+    "durationMs": 25.020,
+    "ordersPerSec": 799344,
+    "trades": 3655,
+    "rejects": 999,
+    "cancels": 1961,
     "latencyUs": {
         "submit": {
-            "count": 16093,
-            "p50": 0.398,
-            "p90": 0.802,
-            "p99": 1.535,
-            "max": 155.322
+            "count": 18039,
+            "p50": 0.664,
+            "p90": 1.280,
+            "p99": 4.384,
+            "max": 1444.789
         },
         "cancel": {
-            "count": 3907,
-            "p50": 0.221,
-            "p90": 0.279,
-            "p99": 0.617,
-            "max": 29.641
+            "count": 1961,
+            "p50": 0.675,
+            "p90": 1.052,
+            "p99": 2.978,
+            "max": 39.029
         }
     },
     "scans": {
@@ -1701,10 +1890,69 @@ Response: **200**
         "p99Us": 0.000,
         "loopholesFound": 0
     },
-    "tradeChecksum": "64c7ea816eef6250",
-    "restingOrders": 30,
-    "baseline": null,
-    "finishedAt": "2026-10-23T20:44:08.467081744Z"
+    "tradeChecksum": "af8471b32b28a9bf",
+    "restingOrders": 11397,
+    "finalCash": [
+        999999929432684,
+        1000000092846023,
+        1000000044451972,
+        999999972318864,
+        1000000041908203,
+        999999886518768,
+        1000000119326221,
+        1000000033789021,
+        999999991163546,
+        999999973556519,
+        999999992018396,
+        999999922669783
+    ],
+    "finalCashTotal": 12000000000000000,
+    "baseline": {
+        "numOrders": 20000,
+        "durationMs": 151.824,
+        "ordersPerSec": 131731,
+        "trades": 3655,
+        "rejects": 999,
+        "cancels": 1961,
+        "latencyUs": {
+            "submit": {
+                "count": 18039,
+                "p50": 6.802,
+                "p90": 16.471,
+                "p99": 28.381,
+                "max": 84.800
+            },
+            "cancel": {
+                "count": 1961,
+                "p50": 3.000,
+                "p90": 9.086,
+                "p99": 13.528,
+                "max": 41.370
+            }
+        },
+        "tradeChecksum": "af8471b32b28a9bf",
+        "restingOrders": 11397,
+        "finalCash": [
+            999999929432684,
+            1000000092846023,
+            1000000044451972,
+            999999972318864,
+            1000000041908203,
+            999999886518768,
+            1000000119326221,
+            1000000033789021,
+            999999991163546,
+            999999973556519,
+            999999992018396,
+            999999922669783
+        ],
+        "finalCashTotal": 12000000000000000,
+        "tradesMatch": true,
+        "cashMatch": true,
+        "checksumMatch": true,
+        "speedup": 6.07
+    },
+    "finishedAt": "2026-10-23T21:05:56.297226341Z"
 }
 ```
 
@@ -1818,7 +2066,7 @@ data: {"pair":"EUR/GBP","rate":0.83409,"ts":1792783468461,"source":"finnhub-ws"}
 
 id: 13
 event: LOOPHOLE_ALERT
-data: {"hasArbitrage":true,"cycle":["USD","EUR","GBP","USD"],"multiplier":1.0039972222222222,"profitPercent":0.39972222222222076,"minProfitPercent":0.02,"edges":6,"excludedEdges":0,"belowThreshold":false,"scanCount":1,"scannedAt":"2026-10-23T20:44:08.253Z","active":true}
+data: {"hasArbitrage":true,"cycle":["USD","EUR","GBP","USD"],"multiplier":1.0039972222222222,"profitPercent":0.39972222222222076,"minProfitPercent":0.02,"edges":6,"excludedEdges":0,"belowThreshold":false,"scanCount":1,"scannedAt":"2026-10-23T21:05:55.639Z","active":true}
 
 id: 14
 event: RATE_TICK
@@ -1838,6 +2086,6 @@ data: {"pair":"USD/INR","rate":96.73,"ts":null,"source":"frankfurter-fallback"}
 
 id: 18
 event: LOOPHOLE_ALERT
-data: {"hasArbitrage":false,"cycle":[],"multiplier":1,"profitPercent":0,"minProfitPercent":0.02,"edges":20,"excludedEdges":0,"belowThreshold":false,"scanCount":2,"scannedAt":"2026-10-23T20:44:08.754Z","active":false}
+data: {"hasArbitrage":false,"cycle":[],"multiplier":1,"profitPercent":0,"minProfitPercent":0.02,"edges":20,"excludedEdges":0,"belowThreshold":false,"scanCount":2,"scannedAt":"2026-10-23T21:05:56.141Z","active":false}
 
 ```

@@ -68,7 +68,7 @@ public final class App {
       Set.of("traderId", "pair", "side", "type", "price", "quantity");
   private static final Set<String> ACCOUNT_FIELDS = Set.of("traderId", "cash", "marginLimit");
   private static final Set<String> SIMULATE_FIELDS =
-      Set.of("numOrders", "seed", "baseline", "scanEvery", "rateVolatility");
+      Set.of("numOrders", "seed", "baseline", "scanEvery", "rateVolatility", "profile");
 
   /** Startup options ({@code run.sh serve ...}). */
   public static final class Config {
@@ -77,6 +77,10 @@ public final class App {
     public Path dataDir = Paths.get("data");
     public boolean seedDemoAccounts;
     public double minProfitPercent = ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT;
+    /** How often the Vault and the counters are written while running. */
+    public long flushIntervalMs = VAULT_FLUSH_MS;
+    /** Ids reserved on disk ahead of the counters while running (tests shrink it). */
+    public long counterReserve = CounterStore.RESERVE;
     /** What POST /api/simulate runs; null for the real {@link Simulator} (tests replace it). */
     public SimulationRunner.Task simulationTask;
   }
@@ -93,6 +97,11 @@ public final class App {
   private final long[] lastTradeTick;
   private final CounterStore counters;
   private long countersWrittenAtSeq = -1;
+  /** The counter values on disk while running: no id at or past these has been issued. */
+  private long reservedOrderId;
+  private long reservedTradeId;
+  private long reservedSeq;
+  private final long flushIntervalMs;
   private final Trade[] recentTrades = new Trade[TRADE_RING];
   private int recentNext;
   private int recentCount;
@@ -107,12 +116,14 @@ public final class App {
     logbook = new Logbook(config.dataDir.resolve("logbook"), directory, LOGBOOK_ROTATE_EVERY);
     engine = new MatchingEngine(directory, vault);
     engine.setTradeSink(logbook);
-    counters = new CounterStore(config.dataDir.resolve("counters.json"));
+    counters = new CounterStore(config.dataDir.resolve("counters.json"), config.counterReserve);
     long[] saved = counters.load();
     if (saved != null) {
       engine.restoreCounters(saved[0], saved[1], saved[2]);
     }
-    countersWrittenAtSeq = engine.sequence();
+    // Reserve before the first command: a crash before the first periodic flush must not
+    // let the next session reissue this session's ids.
+    writeReservedCounters();
     lastTradeTick = new long[directory.pairCount()];
     Arrays.fill(lastTradeTick, -1);
     market = new MarketService(new ArbitrageScanner(directory, config.minProfitPercent), thread,
@@ -122,7 +133,8 @@ public final class App {
     simulations = new SimulationRunner(
         config.simulationTask != null ? config.simulationTask : simulator::run);
     routes();
-    thread.schedule(this::flushVault, VAULT_FLUSH_MS);
+    flushIntervalMs = config.flushIntervalMs;
+    thread.schedule(this::flushVault, flushIntervalMs);
   }
 
   /** Builds the gateway and starts serving. */
@@ -157,14 +169,32 @@ public final class App {
   private void flushVault() {
     try {
       if (vault.dirty()) vault.flush();
-      if (engine.sequence() != countersWrittenAtSeq) {
-        counters.write(engine.nextOrderId(), engine.nextTradeId(), engine.sequence(), false);
-        countersWrittenAtSeq = engine.sequence();
-      }
+      if (engine.sequence() != countersWrittenAtSeq) writeReservedCounters();
     } catch (IOException e) {
       LOG.log(Level.WARNING, "vault/counter flush failed; will retry", e);
     }
-    thread.schedule(this::flushVault, VAULT_FLUSH_MS);
+    thread.schedule(this::flushVault, flushIntervalMs);
+  }
+
+  /** Writes the counters plus the reserve (engine thread, or the constructor). */
+  private void writeReservedCounters() throws IOException {
+    counters.write(engine.nextOrderId(), engine.nextTradeId(), engine.sequence(), false);
+    countersWrittenAtSeq = engine.sequence();
+    reservedOrderId = engine.nextOrderId() + counters.reserve();
+    reservedTradeId = engine.nextTradeId() + counters.reserve();
+    reservedSeq = engine.sequence() + counters.reserve();
+  }
+
+  /**
+   * After each command: if any counter has used half of the reserve on disk, write a new
+   * reserve now instead of waiting for the periodic flush, so the reserve is never outrun.
+   */
+  private void keepReserve() throws IOException {
+    long half = counters.reserve() / 2;
+    if (engine.nextOrderId() > reservedOrderId - half || engine.nextTradeId() > reservedTradeId - half
+        || engine.sequence() > reservedSeq - half) {
+      writeReservedCounters();
+    }
   }
 
   // ---------------------------------------------------------------- routes
@@ -395,6 +425,20 @@ public final class App {
       }
       p.rateVolatility = d;
     }
+    if (m.containsKey("profile")) {
+      Object v = m.get("profile");
+      String prof = v instanceof String ? ((String) v).trim().toLowerCase(Locale.ROOT) : null;
+      if (!Simulator.SHALLOW.equals(prof) && !Simulator.DEEP.equals(prof)) {
+        throw badRequest("profile must be \"shallow\" or \"deep\"");
+      }
+      p.profile = prof;
+    }
+    if (Simulator.DEEP.equals(p.profile) && p.baseline
+        && p.numOrders > Simulator.DEEP_BASELINE_MAX_ORDERS) {
+      throw badRequest("a deep run with the baseline is capped at "
+          + Simulator.DEEP_BASELINE_MAX_ORDERS + " orders (the naive matcher costs O(resting"
+          + " orders) per operation); lower numOrders or set baseline to false");
+    }
     return p;
   }
 
@@ -432,6 +476,7 @@ public final class App {
       hub.publish("BOOK_UPDATE", book(pairId, DEFAULT_DEPTH));
     }
     logbook.rotateIfDue();
+    keepReserve();
 
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("orderId", orderId(r.orderId()));
@@ -468,6 +513,7 @@ public final class App {
     }
     hub.publish("BOOK_UPDATE", book(o.pairId(), DEFAULT_DEPTH));
     logbook.rotateIfDue();
+    keepReserve();
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("orderId", orderId(id));
     out.put("status", "CANCELLED");

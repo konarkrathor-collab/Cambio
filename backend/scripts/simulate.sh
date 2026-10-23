@@ -3,7 +3,8 @@
 # curl and sed only (macOS and Linux).
 #   backend/scripts/simulate.sh [numOrders] [seed]            start a fresh server for it
 #   BASE=http://127.0.0.1:8080 backend/scripts/simulate.sh 1000000   use a running one
-# Optional: SCAN_EVERY (default 100), VOLATILITY (percent per step, default 0.01).
+# Optional: PROFILE (shallow or deep, default shallow; deep with the baseline is capped at
+# 200000 orders), SCAN_EVERY (default 100), VOLATILITY (percent per step, default 0.01).
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -11,6 +12,7 @@ orders="${1:-5000}"
 seed="${2:-42}"
 scan_every="${SCAN_EVERY:-100}"
 volatility="${VOLATILITY:-0.01}"
+profile="${PROFILE:-shallow}"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/ads-sim.XXXXXX")"
 server=""
@@ -33,7 +35,7 @@ if [ -z "${BASE:-}" ]; then
   BASE="http://127.0.0.1:$(cat "$work/port")"
 fi
 
-request="{\"numOrders\":$orders,\"seed\":$seed,\"baseline\":true,\"scanEvery\":$scan_every,\"rateVolatility\":$volatility}"
+request="{\"numOrders\":$orders,\"seed\":$seed,\"profile\":\"$profile\",\"baseline\":true,\"scanEvery\":$scan_every,\"rateVolatility\":$volatility}"
 echo "POST $BASE/api/simulate $request"
 code="$(curl -s --max-time 600 -o "$work/res" -w '%{http_code}' -X POST \
   -H 'Content-Type: application/json' --data-binary "$request" "$BASE/api/simulate")"
@@ -56,6 +58,7 @@ field() { # field NAME TEXT: the first "NAME":value (quotes stripped)
 
 echo
 row "" "engine" "naive baseline"
+row "profile" "$(field profile "$engine")" ""
 row "orders (all operations)" "$(field numOrders "$engine")" "$(field numOrders "$baseline")"
 row "duration (ms)" "$(field durationMs "$engine")" "$(field durationMs "$baseline")"
 row "orders/s" "$(field ordersPerSec "$engine")" "$(field ordersPerSec "$baseline")"
@@ -70,8 +73,10 @@ for p in p50 p90 p99 max; do
   row "cancel $p (us)" "$(field $p "$ec")" "$(field $p "$bc")"
 done
 row "trade checksum" "$(field tradeChecksum "$engine")" "$(field tradeChecksum "$baseline")"
+row "final cash, all traders" "$(field finalCashTotal "$engine")" "$(field finalCashTotal "$baseline")"
 echo
 scans="$(first_obj scans "$engine")"
-echo "checksumMatch: $(field checksumMatch "$baseline")    speedup (engine / baseline orders/s): $(field speedup "$baseline")x"
+echo "tradesMatch: $(field tradesMatch "$baseline")  cashMatch (every trader): $(field cashMatch "$baseline")  checksumMatch: $(field checksumMatch "$baseline")"
+echo "speedup (engine / baseline orders/s): $(field speedup "$baseline")x"
 echo "scans: $(field count "$scans") on synthetic rates, p50 $(field p50Us "$scans") us, p99 $(field p99Us "$scans") us, loopholes found in $(field loopholesFound "$scans")"
 [ "$(field checksumMatch "$baseline")" = true ]

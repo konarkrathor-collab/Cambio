@@ -68,7 +68,8 @@ final class GatewayTests {
         GatewayTests::restart);
     r.check("ids and seq continue across a clean restart; an old session's order is a 404",
         GatewayTests::idsContinue);
-    r.check("after a crash (data dir copied mid-run) the next session never repeats an id",
+    r.check("crash with no flush since the ids were issued (default reserve, and a reserve of 8"
+        + " renewed as it runs out): the next session never repeats an id",
         GatewayTests::idsAfterCrash);
     r.check("GET /api/trades: newest first, pair filter, limit 1-500, ring of 500",
         () -> withApp(GatewayTests::recentTrades));
@@ -124,6 +125,17 @@ final class GatewayTests {
       Map<?, ?> e = (Map<?, ?>) ((Map<?, ?>) Json.parse(r.body())).get("error");
       return r.statusCode() + " " + e.get("code");
     }
+  }
+
+  /** startApp with a flush interval and, if positive, a counter reserve. */
+  static App startApp(Path dataDir, long flushMs, long reserve) throws Exception {
+    App.Config c = new App.Config();
+    c.port = 0;
+    c.dataDir = dataDir;
+    c.seedDemoAccounts = true;
+    c.flushIntervalMs = flushMs;
+    if (reserve > 0) c.counterReserve = reserve;
+    return App.start(c);
   }
 
   static App startApp(Path dataDir) throws Exception {
@@ -707,26 +719,32 @@ final class GatewayTests {
   }
 
   private static TestRunner.Result idsAfterCrash() throws Exception {
+    // the periodic flush never runs: every id below was issued after the last write
+    String withDefault = crashAndRecover(App.VAULT_FLUSH_MS * 1_800, 0);
+    // a tiny reserve: it is used up repeatedly and must be renewed as orders arrive
+    String withTiny = crashAndRecover(App.VAULT_FLUSH_MS * 1_800, 8);
+    return TestRunner.Result.pass(withDefault + "; reserve 8: " + withTiny);
+  }
+
+  /** Orders, then a copy of the data dir with no flush or shutdown (the crash), then restart. */
+  private static String crashAndRecover(long flushMs, long reserve) throws Exception {
     Path dir = Files.createTempDirectory("ads-gw-crash-");
     Path copy = Files.createTempDirectory("ads-gw-crash-copy-");
-    App running = startApp(dir);
+    App running = startApp(dir, flushMs, reserve);
     try {
       Client c = new Client(running);
       long maxId = 0;
       long maxTrade = 0;
+      long maxSeq = 0;
       for (int i = 0; i < 40; i++) {
         Map<?, ?> r = c.order(1 + i % 5, "EUR/USD", i % 2 == 0 ? "SELL" : "BUY", "LIMIT", "1.08500", 3);
         maxId = Math.max(maxId, idOf(r));
+        maxSeq = Math.max(maxSeq, (Long) r.get("seq"));
         for (Object t : (List<?>) r.get("trades")) {
           maxTrade = Math.max(maxTrade, (Long) ((Map<?, ?>) t).get("tradeId"));
         }
       }
-      long deadline = System.currentTimeMillis() + 10_000;
-      Path counters = dir.resolve("counters.json");
-      while (!(Files.exists(counters) && Files.readString(counters).contains("\"clean\":false"))) {
-        check(System.currentTimeMillis() < deadline, "no periodic counter flush");
-        Thread.sleep(100);
-      }
+      check(maxTrade > 0, "the orders should have traded");
       try (Stream<Path> files = Files.walk(dir)) { // the "crash": a snapshot, no shutdown
         for (Path p : (Iterable<Path>) files::iterator) {
           Path target = copy.resolve(dir.relativize(p).toString());
@@ -734,16 +752,18 @@ final class GatewayTests {
           else Files.copy(p, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
       }
-      App recovered = startApp(copy);
+      App recovered = startApp(copy, flushMs, reserve);
       try {
         Client c2 = new Client(recovered);
-        c2.order(2, "EUR/USD", "SELL", "LIMIT", "1.08500", 5);
+        Map<?, ?> first = c2.order(2, "EUR/USD", "SELL", "LIMIT", "1.08500", 5);
         Map<?, ?> next = c2.order(3, "EUR/USD", "BUY", "LIMIT", "1.08500", 5);
         long tradeId = (Long) ((Map<?, ?>) ((List<?>) next.get("trades")).get(0)).get("tradeId");
-        check(idOf(next) > maxId && tradeId > maxTrade, "an id repeated after the crash: " + next
-            + " (max before: ORD-" + maxId + ", trade " + maxTrade + ")");
-        return TestRunner.Result.pass("before: ORD-" + maxId + "/trade " + maxTrade + "; after: "
-            + next.get("orderId") + "/trade " + tradeId + " (skipped ahead, never repeated)");
+        check(idOf(first) > maxId && tradeId > maxTrade && (Long) first.get("seq") > maxSeq,
+            "an id repeated after the crash: " + first.get("orderId") + " seq " + first.get("seq")
+            + ", trade " + tradeId + " (max before: ORD-" + maxId + ", trade " + maxTrade
+            + ", seq " + maxSeq + ")");
+        return "before ORD-" + maxId + "/trade " + maxTrade + "/seq " + maxSeq + ", after "
+            + first.get("orderId") + "/trade " + tradeId + "/seq " + first.get("seq");
       } finally {
         recovered.stop();
       }
@@ -753,6 +773,7 @@ final class GatewayTests {
       deleteTree(copy);
     }
   }
+
 
   private static TestRunner.Result recentTrades(Client c) throws Exception {
     check(((Long) c.json("GET", "/api/trades", null, 200).get("count")) == 0, "not empty at start");

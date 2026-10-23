@@ -14,7 +14,10 @@ import ads.vault.Vault;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -47,6 +50,10 @@ public final class Simulator {
   public static final BigDecimal DEFAULT_VOLATILITY = new BigDecimal("0.01");
   public static final BigDecimal MAX_VOLATILITY = BigDecimal.ONE;
   static final int BASELINE_WARMUP = 20_000;
+  /** Largest deep run with the baseline on: the naive matcher costs O(resting) per operation. */
+  public static final int DEEP_BASELINE_MAX_ORDERS = 200_000;
+  public static final String SHALLOW = "shallow";
+  public static final String DEEP = "deep";
 
   /** Validated request parameters. */
   public static final class Params {
@@ -55,6 +62,8 @@ public final class Simulator {
     public boolean baseline = true;
     public int scanEvery = DEFAULT_SCAN_EVERY;
     public BigDecimal rateVolatility = DEFAULT_VOLATILITY;
+    /** {@link #SHALLOW} (the default mix) or {@link #DEEP}; see {@link OrderGenerator}. */
+    public String profile = SHALLOW;
   }
 
   private final double minProfitPercent;
@@ -65,11 +74,17 @@ public final class Simulator {
 
   /** Runs one simulation and returns the response body (see 09_api_contract.md §3.12). */
   public Map<String, Object> run(Params p) {
-    OrderStream stream = OrderGenerator.generate(p.seed, p.numOrders);
+    boolean deep = DEEP.equals(p.profile);
+    if (deep && p.baseline && p.numOrders > DEEP_BASELINE_MAX_ORDERS) {
+      throw new IllegalArgumentException("deep runs with the baseline are capped at "
+          + DEEP_BASELINE_MAX_ORDERS + " orders");
+    }
+    OrderStream stream = OrderGenerator.generate(p.seed, p.numOrders, deep);
     Run engine = runEngine(stream, p);
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("numOrders", p.numOrders);
     out.put("seed", p.seed);
+    out.put("profile", deep ? DEEP : SHALLOW);
     out.put("scanEvery", p.scanEvery);
     out.put("rateVolatility", p.rateVolatility);
     engine.put(out);
@@ -82,6 +97,7 @@ public final class Simulator {
     out.put("scans", scans);
     out.put("tradeChecksum", Fnv64.hex(engine.checksum.value()));
     out.put("restingOrders", engine.resting);
+    engine.putCash(out);
     if (p.baseline) {
       warmBaseline(stream);
       Run naive = runBaseline(stream);
@@ -90,7 +106,12 @@ public final class Simulator {
       naive.put(b);
       b.put("tradeChecksum", Fnv64.hex(naive.checksum.value()));
       b.put("restingOrders", naive.resting);
-      b.put("checksumMatch", naive.checksum.value() == engine.checksum.value());
+      naive.putCash(b);
+      boolean tradesMatch = naive.checksum.value() == engine.checksum.value();
+      boolean cashMatch = Arrays.equals(naive.finalCash, engine.finalCash);
+      b.put("tradesMatch", tradesMatch);
+      b.put("cashMatch", cashMatch);
+      b.put("checksumMatch", tradesMatch && cashMatch);
       b.put("speedup", BigDecimal.valueOf(naive.nanos)
           .divide(BigDecimal.valueOf(Math.max(1, engine.nanos)), 2, RoundingMode.HALF_EVEN));
       out.put("baseline", b);
@@ -117,6 +138,19 @@ public final class Simulator {
     long[] scanNs = new long[0];
     int scanCount;
     long loopholes;
+    /** Final cash of simulation traders 1..12, in order. */
+    final long[] finalCash = new long[OrderGenerator.TRADERS];
+
+    void putCash(Map<String, Object> out) {
+      long total = 0;
+      List<Object> list = new ArrayList<>();
+      for (long c : finalCash) {
+        list.add(c);
+        total = Math.addExact(total, c);
+      }
+      out.put("finalCash", list);
+      out.put("finalCashTotal", total);
+    }
 
     Run(OrderStream s) {
       numOrders = s.size;
@@ -196,6 +230,7 @@ public final class Simulator {
     }
     run.nanos += System.nanoTime() - blockStart;
     run.resting = engine.restingOrders();
+    for (int t = 1; t <= OrderGenerator.TRADERS; t++) run.finalCash[t - 1] = vault.account(t).cash();
     return run;
   }
 
@@ -245,6 +280,7 @@ public final class Simulator {
     }
     run.nanos = System.nanoTime() - start;
     run.resting = m.restingOrders();
+    for (int t = 1; t <= OrderGenerator.TRADERS; t++) run.finalCash[t - 1] = m.cash(t);
     return run;
   }
 }

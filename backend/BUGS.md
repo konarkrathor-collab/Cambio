@@ -143,7 +143,7 @@ The default is now 0.02% (`ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT`). It can
 
 ---
 
-## B8: Near the threshold, the scanner misses most real cycles (Stage 2 addendum, measured; triangles closed at the Stage 3 addendum, longer cycles still open)
+## B8: Near the threshold, the scanner misses most real cycles. ACCEPTED as a documented limitation (doc 08 Stage 4 addendum): triangles exact, longer loops best-effort
 
 **What the threshold study showed.** At a 0.010% threshold, an exhaustive search over every simple cycle finds a cycle of at least 0.010% in 286 of 432 scans of the real capture. The scanner reports one in only 58. This is the gap B4 documented, and on real data it is large. Live ticks produce many cycles of almost the same profit, about 0.01%. On a shifted pass, Bellman-Ford returns *some* negative cycle, usually one just under the threshold, so no shifted pass returns the qualifying one.
 
@@ -157,7 +157,7 @@ threshold   scanner reports a cycle      exhaustive: some cycle >= t      triang
 legs of the best cycle in scans where it reaches 0.010%: 5 legs=4 6 legs=38 7 legs=244
 ```
 
-On real ticks the near-threshold cycles are almost never triangles. Bid/ask noise accumulates along long loops, usually through all 7 live currencies. So the scanner column did not move (58 at 0.010%), and the gap for cycles of 4 or more legs remains. It still does not affect the 0.02% default, where both the scanner and the exhaustive search report 0 of 432. **Possible fix, for the supervisor to decide:** run an exhaustive simple-cycle search whenever at most 8 currencies are active. That is about 2,400 cycles for the 7-currency live graph and at most about 17,000 for 8, so it costs microseconds. Otherwise keep triangles plus Bellman-Ford, which covers the 12-currency fallback graph. That graph is consistent through USD anyway, so its base pass exits early.
+On real ticks the near-threshold cycles are almost never triangles. Bid/ask noise accumulates along long loops, usually through all 7 live currencies. So the scanner column did not move (58 at 0.010%), and the gap for cycles of 4 or more legs remains. It still does not affect the 0.02% default, where both the scanner and the exhaustive search report 0 of 432. **Decision (doc 08 Stage 4 addendum, item 4): accepted as a documented limitation.** The project defines triangular arbitrage, and triangles are now exact: no triangle at or above the threshold is ever missed, and a test pins that. Loops of 4 or more legs are best-effort. The Bellman-Ford passes report one when they find it, and may miss others. The 5- to 7-leg loops that go unreported near 0.01% are bid/ask noise accumulating over many legs, not tradeable opportunities, and at the 0.02% default the real capture shows none. The exhaustive search proposed here earlier was not built, by that decision.
 
 ---
 
@@ -179,7 +179,7 @@ On real ticks the near-threshold cycles are almost never triangles. Bid/ask nois
 
 ---
 
-## B11: On the simulator's workload the engine is no faster than the naive baseline (Stage 4, measured, open)
+## B11: On the simulator's shallow workload the engine is no faster than the naive baseline (Stage 4, measured; deep profile added at the Stage 4 addendum)
 
 **What was measured.** `POST /api/simulate` runs the doc 08 Stage 4 mix: a narrow ±10-tick band, 20% cancels and constant crossing. On that mix the books stay shallow: 46 orders rest across six pairs after 5,000 operations, and 57 after 1,000,000. At that depth the naive matcher scans about ten contiguous array slots per pair, which is as fast as the B+ tree, the order index and the per-order allocations. The engine allocates an `OrderResult`, a `Trade[]`, a `Trade` per fill and an `Order` when one rests, and it reads the account through the Vault's LRU cache. Measured `speedup` in the development container:
 
@@ -191,7 +191,29 @@ On real ticks the near-threshold cycles are almost never triangles. Bid/ask nois
 
 The engine's tail is also longer: submit max 3.1 ms against 0.11 ms at 1,000,000. Those are collection pauses: `-Xlog:gc` on a 1,000,000 run shows 1–4 ms young-generation pauses, which match the engine's 2–3.7 ms maximums. The baseline allocates nothing per order. Its p99 was 1.6 µs against 0.8 µs from a fresh server, and level with the baseline when warm. Every run matched checksums.
 
-**Not changed.** The workload was not changed to make the baseline lose: doc 08 fixes the mix, and the rule is not to tune for a target. The doc 04 throughput target (≥ 50,000 orders/s) is met many times over by both. The structures win when the book is deep (the Stage 0 benchmark and doc 04 Phase 5 measure that), and this mix never builds a deep book. Two options for the supervisor: (a) accept this as the honest result for this mix; (b) approve a second, deep-book profile (for example a wider band and fewer cancels), offered alongside the default rather than replacing it. Cutting the engine's per-order allocations is a separate, possible optimisation.
+**Not changed.** The workload was not changed to make the baseline lose: doc 08 fixes the mix, and the rule is not to tune for a target. The doc 04 throughput target (≥ 50,000 orders/s) is met many times over by both. The structures win when the book is deep (the Stage 0 benchmark and doc 04 Phase 5 measure that), and this mix never builds a deep book. **Stage 4 addendum.** Option (b) was chosen: an optional `profile: "deep"` (contract §3.12), with the shallow default unchanged (seed 42 still gives `cf084b63dbf339ae`). Each size was measured once with `simulate.sh` on a fresh server, so JIT warm-up is included. The deep mix was written from the spec and not tuned afterwards:
+
+| profile | numOrders | engine orders/s | baseline orders/s | speedup | resting at end |
+| :--- | --: | --: | --: | --: | --: |
+| shallow | 5,000 | 877,183 | 2,232,083 | 0.39 | 46 |
+| shallow | 50,000 | 844,969 | 2,208,646 | 0.38 | 26 |
+| shallow | 200,000 | 1,401,721 | 2,797,680 | 0.50 | 26 |
+| shallow | 1,000,000 | 3,825,039 | 3,568,278 | 1.07 | 57 |
+| deep | 5,000 | 505,736 | 665,219 | 0.76 | 2,881 |
+| deep | 50,000 | 798,697 | 46,095 | 17.33 | 28,382 |
+| deep | 200,000 | 1,147,432 | 10,902 | 105.24 | 113,390 |
+
+With shallow books the baseline wins or ties; with deep books the engine stays near a million operations a second while the linear scan falls off with depth. Every run matched trades and every trader's final cash.
+
+---
+
+## B12: A crash before the first counter flush reissued ids; the old crash test could not fail (Stage 4 addendum, found by the new test)
+
+**What broke.** The Stage 3 addendum wrote `counters.json` (counters plus the 1,000,000 reserve) only on the periodic flush, every 2 s, and only once something had changed. A fresh data directory had no file until the first flush. A server that crashed in those first 2 s restarted at `ORD-1` and reissued ids that were already in the Logbook archive. The reserve was also renewed only on that timer, so in principle more than 1,000,000 ids between two flushes could outrun it. The Stage 3 crash test waited for a periodic flush before copying the directory, so no id was ever issued after the last write. A mutation that removed the reserve passed all 190 tests.
+
+**Fix.** The App writes the reserved counters at startup, before the first command. After every command it writes a fresh reserve at once if any counter has used half of the reserve on disk. The flush interval and the reserve are now `App.Config` parameters, so a test can disable the timer. The new test (`crash with no flush since the ids were issued…`) sets the flush interval to an hour, issues 40 orders and copies the data directory mid-run, as the crash. It then restarts on the copy and requires the next order id, trade id and `seq` to exceed every earlier one. It runs twice: once with the default reserve, and once with a reserve of 8 that has to be renewed several times during the run. **Proof it can fail:** with the reserve removed (`long add = 0`) the test fails with `an id repeated after the crash: ORD-1 seq 1, trade 1 (max before: ORD-40, trade 20, seq 40)`. The same happens with the Stage 4 behaviour restored (no startup write).
+
+**Also from the addendum.** A baseline that settled at the taker's limit price instead of the maker's passed every Stage 4 test, because only trades and counts were compared. The comparison now includes every simulation trader's final cash (`cashMatch`, part of `checksumMatch`). With that mutation, 3 tests fail. The first is `engine and naive baseline agree…`, which fails on `shallow seed 1 n 1000: finalCash […] vs […]`.
 
 ---
 

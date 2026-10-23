@@ -18,9 +18,13 @@ import java.util.Map;
  * {@code <data-dir>/counters.json}, so ids never repeat across restarts (doc 08 Stage 3
  * addendum, item 2). Written atomically (temp file, fsync, rename) alongside the Vault.
  *
- * <p>While the server runs, each write stores the counters plus {@link #RESERVE} and
- * {@code "clean": false}: if the process dies before the next write, the next session starts
- * past every id this one could have issued (ids may skip ahead, never repeat). A graceful
+ * <p>While the server runs, each write stores the counters plus the reserve ({@link #RESERVE}
+ * by default) and {@code "clean": false}. The App writes once at startup, before the first
+ * command, again on every periodic flush, and at once whenever a counter has used half of
+ * the reserve on disk. So, as long as no single command uses half the reserve, no id at or
+ * past the values on disk has ever been issued, and if
+ * the process dies, the next session starts past every id this one issued (ids may skip
+ * ahead, never repeat). A graceful
  * shutdown writes the exact counters with {@code "clean": true}.
  */
 final class CounterStore {
@@ -28,9 +32,16 @@ final class CounterStore {
   static final long RESERVE = 1_000_000;
 
   private final Path file;
+  private final long reserve;
 
-  CounterStore(Path file) {
+  CounterStore(Path file, long reserve) {
+    if (reserve < 1) throw new IllegalArgumentException("reserve must be >= 1");
     this.file = file;
+    this.reserve = reserve;
+  }
+
+  long reserve() {
+    return reserve;
   }
 
   /** {nextOrderId, nextTradeId, seq}, or null if there is no file yet. */
@@ -58,7 +69,7 @@ final class CounterStore {
 
   /** Writes the counters; {@code clean} stores them exactly, otherwise with the reserve. */
   void write(long nextOrderId, long nextTradeId, long seq, boolean clean) throws IOException {
-    long add = clean ? 0 : RESERVE;
+    long add = clean ? 0 : reserve;
     Map<String, Object> m = new LinkedHashMap<>();
     m.put("nextOrderId", nextOrderId + add);
     m.put("nextTradeId", nextTradeId + add);

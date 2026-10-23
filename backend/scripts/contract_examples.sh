@@ -135,7 +135,9 @@ echo "### Simulator"
 ex "Last result before any simulation" GET /api/simulate/last
 ex "Simulation with every default (numOrders 5000, seed 42, baseline, a scan every 100)" POST /api/simulate '{}'
 ex "Without the baseline, scans off, no rate volatility" POST /api/simulate '{"numOrders":20000,"seed":7,"baseline":false,"scanEvery":0,"rateVolatility":0}'
+ex "Deep profile (books grow deep; the baseline's linear scan pays for it)" POST /api/simulate '{"numOrders":20000,"seed":42,"profile":"deep","scanEvery":0}'
 ex "Out-of-range parameter" POST /api/simulate '{"numOrders":0}'
+ex "Deep with the baseline above its cap" POST /api/simulate '{"numOrders":200001,"profile":"deep"}'
 ex "Last result (the most recent simulation, as returned)" GET /api/simulate/last
 echo "### Other"
 ex "Unknown endpoint" GET /api/nope

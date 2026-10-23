@@ -12,7 +12,7 @@ import ads.engine.MatchingEngine;
  *
  * <p>It shares no matching code with the engine and is checked against it, not only timed:
  * fed the same stream it must produce the same trades (same {@link Fnv64} checksum), the same
- * rejects and the same cancels.
+ * rejects and cancels, and the same final cash for every trader.
  */
 public final class NaiveMatcher {
   /** Called once per trade, in execution order. */
@@ -155,6 +155,13 @@ public final class NaiveMatcher {
       }
     }
     return -1;
+  }
+
+  /** The trader's cash now; throws if there is no such account. */
+  public long cash(long traderId) {
+    int a = account(traderId);
+    if (a < 0) throw new IllegalArgumentException("no account " + traderId);
+    return accountCash[a];
   }
 
   /** Number of resting orders across every pair. */
