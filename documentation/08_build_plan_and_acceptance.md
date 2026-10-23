@@ -241,10 +241,29 @@ Errors use one shape: `{"error":{"code":"…","message":"…"}}` with correct HT
 
 ### Stage 6 — Integration and hardening
 
-- End-to-end script: start backend, start feed in replay mode, run the simulator, assert SSE events and final account balances.
-- Cross-slice checks from doc 07: order submit validates the pair via the Directory; every trade reaches the Logbook; scanning never blocks matching.
-- Failure drills: kill the feed, kill the network, send malformed JSON, cancel while matching, restart mid-session (accounts persist, archive decodes).
-- Every bug found goes in `backend/BUGS.md`.
+Everything below runs against the **real built system** (backend, feed, dashboard), not mocks. Every bug found goes in `backend/BUGS.md` (what broke, why, the fix); a drill that fails and is fixed is a success, a drill that is skipped is not.
+
+**Fixes carried over from the Stage 5 review (do first, own commit).**
+1. **A clean browser console on a fresh server.** `GET /api/simulate/last` returns the contract's `404 NO_SIMULATION` before any run, and Chrome logs every 404. Add an additive optional field `hasSimulation` (boolean) to `GET /api/health` (contract §3.10, captured example), and have the dashboard call `simulate/last` only when it is true. Verify in a real browser that a fresh server gives zero console lines from the app.
+2. **Responsive down to 1024 × 768** (a classroom projector): below 1280 px wide the three columns reflow to two, with no horizontal scrolling and nothing clipped. Below 1024 px show one plain notice that the dashboard needs at least 1024 px, instead of a broken layout.
+3. **Error boundary.** A thrown error in one view must show a recoverable message inside that panel and leave the other views working; add a test.
+4. **`frontend/README.md`**: note that `npm ci` on macOS prints a harmless `fsevents` install-scripts warning.
+
+**Integration checks (cross-slice, from doc 07).**
+- **End-to-end script** `scripts/e2e.sh` (curl and shell only, macOS and Linux): start a seeded backend on an ephemeral port and a temporary data directory, start the feed in `--replay` mode against it, drive orders and cancels over the API, run both simulator profiles, and assert from the API alone: the status shows replayed ticks and scans, the event stream delivered BOOK_UPDATE, TRADE and LOOPHOLE_ALERT in order, and the final balances equal an independent recomputation from the trade list.
+- **Dashboard end-to-end:** commit your 41-step headless-browser golden-path script as `frontend/e2e/golden-path.mjs`. It uses an already-installed Playwright, which stays *outside* `package.json` (document how to run it); it is regression tooling for demo day, not part of `npm test`.
+- **Every trade reaches the Logbook:** after N orders, `run.sh archive` decodes exactly as many trades as `GET /api/trades` plus the ring overflow reports, byte for byte, and the pair of every order was validated by the Directory (an unknown pair never reaches the engine).
+- **Scanning never blocks matching:** flood `POST /api/market/rates` at 200 ticks per second while submitting orders; record order-request latency p50, p99 and max with and without the flood, and report both. If the flood moves p99 by more than 2 ms, find out why and fix it.
+
+**Failure drills** (each with the exact command, the observed result and a pass or fail in your report):
+1. `kill -9` the backend mid-session, restart it: accounts persist, ids continue and never repeat, the archive decodes. **Bound the Logbook's loss window by time:** today up to 500 trades sit unrotated in memory and are lost in a crash, so also rotate a non-empty buffer on a timer (at most every 5 s), and show the new bound with a test.
+2. Kill the feed: within 30 s the status says `disconnected`, the scan clears and the dashboard shows it. Restart the feed: everything recovers without restarting the backend.
+3. Network loss and recovery for the feed (`feed/live_check.sh`; the user runs the real-key version, you run the `--ws-url` simulation).
+4. Malformed and hostile input at scale: a seeded fuzz test of every endpoint (random JSON, wrong types, huge numbers, unicode pair names, oversized bodies, concurrent submit and cancel races). The server must never return 500, never hang and never die; report the number of requests tried.
+5. SSE under stress: 32 streams open plus a fast order flow, a client that never reads, and a client that reconnects in a loop. The engine's order latency stays flat and the dropped-client counter rises as designed.
+6. **Soak:** 10 minutes at a steady 300 orders per second plus 50 ticks per second, then report heap use at the start, middle and end (from `-Xlog:gc` or `jcmd`), the order-latency p99 per minute, and any growth in thread or socket counts. Flat is the pass condition; anything that grows is a bug to fix and log.
+
+**Gate.** All backend, feed and frontend suites pass; `scripts/e2e.sh` passes; the drill table is complete with commands; the soak report is included. The supervisor reruns the end-to-end script, repeats the kill -9 and feed-kill drills by hand on a fresh clone, and drives the dashboard again in a real browser, checking the console is clean and the layout holds at 1024 × 768.
 
 ### Stage 7 — Delivery
 
