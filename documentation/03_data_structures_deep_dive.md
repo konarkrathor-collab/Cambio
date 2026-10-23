@@ -61,7 +61,7 @@ Global Hash Map:
 * **Cancel Order by ID:**
   1. Lookup `OrderNode*` in Hash Map: $O(1)$.
   2. Unlink node from Doubly Linked List (`node->prev->next = node->next; node->next->prev = node->prev`): $O(1)$.
-  3. Total cancellation latency: **Strict $O(1)$**.
+  3. Total cancellation latency: **$O(1)$ average** — the unlink is strictly $O(1)$, but the Hash Map lookup is $O(1)$ only on average ($O(N)$ worst case under pathological collisions, bounded in practice by load-factor resizing — the same caveat §4 states for the account cache).
 
 ---
 
@@ -168,7 +168,7 @@ Financial matching engines produce massive audit logs. Huffman Coding constructs
 | :--- | :--- | :---: | :---: | :---: |
 | **Radix Tree** | Price Search / Insert / Delete | $O(1)$ for fixed key width | $O(1)$ for fixed key width (deterministic, not amortized) | $O(P)$ nodes, ~128 B/node at `RADIX_BASE=16` |
 | **Price Level Queue (DLL)** | Enqueue Order (FIFO Tail) | $O(1)$ | $O(1)$ | $O(N)$ |
-| **Order Cancel (Hash Map + DLL)**| Delete Arbitrary Order | $O(1)$ | $O(1)$ | $O(N)$ |
+| **Order Cancel (Hash Map + DLL)**| Delete Arbitrary Order | $O(1)$ average | $O(N)$ (pathological collisions) | $O(N)$ |
 | **Bellman-Ford Graph** | Detect Arbitrage Cycle | $O(V \cdot E)$ | $O(V \cdot E)$ | $O(V + E)$ |
 | **Hash Map + LRU Cache** | Account Margin Lookup | $O(1)$ average | $O(N)$ (pathological collisions) | $O(N)$ |
 | **Prefix Trie** | Ticker Validation & Autocomplete | $O(L)$ | $O(L)$ | $O(L \cdot |\Sigma|)$ |

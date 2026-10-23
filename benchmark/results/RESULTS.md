@@ -49,13 +49,14 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 
 - [x] **Ladder v2a** — BST, AVL, splay, red-black hand-rolled (+ rotation counters; RB retires the TreeMap stand-in) — see Run 10
 - [x] Sorted-insertion adversarial pattern (BST degeneration demo) — see Run 11
-- [ ] Ladder v2b — 2-3 tree, B-tree, B+ (B+ is doc 05 §1's last unmeasured row)
+- [x] Ladder v2b — 2-3 tree, B-tree, B+ — see Run 13a (B+ is the strongest tree measured; open tension recorded in doc 05 §1)
 - [x] Arbitrage (Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF) — see below
 - [x] Queue (array, singly list, DLL, tree-by-id, DLL+hash) — see Run 6
 - [x] Cache (hash chaining, open addressing, hash+LRU, splay; Zipfian stream) — see Run 7
 - [x] Ticker (hash set, sorted array, TST, trie; two-phase exact/prefix workload) — see Run 8
 - [x] Compression (RLE, LZW, Huffman, order-0 arithmetic; round-trip gate) — see Run 9
-- [ ] Deeper-book adversarial queue run (array O(n)-shift divergence at realistic depth)
+- [x] Deeper-book adversarial queue run — see Run 13b (array 12–13× behind the pick at ~15k depth)
+- [ ] Resident-footprint (not churn) memory measurement for radix16 vs b+tree32 — raised by Run 13a
 
 ---
 
@@ -154,11 +155,11 @@ range documentation doc 03 §3 already claims a scan completes in `< 50 microsec
 
 **Findings vs doc 05 §3 claims:**
 
-1. **Both V=20 and V=50 scans complete in well under 1 ms** (20–380 μs range), comfortably
-   inside the `< 50 μs`-at-20-currencies target doc 03 claims *when measured from a cold
-   `nanoTime()` per rep as done here* — the project's own target was closer to the median
-   here once JIT warmup is accounted for; worth noting in the final report as "order of
-   magnitude confirmed, exact microsecond figure needs a dedicated JIT-steady-state run."
+1. **Both V=20 and V=50 scans complete in well under 1 ms** (20–380 μs range). *(Corrected:
+   this bullet originally called that "comfortably inside" doc 03's `< 50 μs` target, but its
+   own V=20 Bellman-Ford median is 56 μs — over the target — and V=50 is 189 μs. Measured
+   properly — warm, per scan — in Run 12b: 9.1 μs at V=20 (inside the target), 161 μs at V=50
+   with a cycle (outside it).)*
 2. **Floyd-Warshall is the slowest candidate at both scales** (0.117 ms and 0.378 ms,
    2–4× every other candidate) — directly confirms doc 05's O(V³)-overkill rejection with
    real numbers, not just asymptotic argument.
@@ -180,8 +181,10 @@ range documentation doc 03 §3 already claims a scan completes in `< 50 microsec
    and shouldn't be over-read). This is a more nuanced result than "SPFA is faster" — it
    empirically supports doc 05's actual reasoning for keeping Bellman-Ford: not that SPFA is
    slow, but that its runtime is input/queue-dynamics-dependent rather than fixed, which this
-   data shows directly (the V=20→V=50 speedup ratio differs sharply between the two
-   algorithms, 2.5× vs ~8.6×, where Bellman-Ford's is far more predictable).
+   data shows directly (the V=20→V=50 slowdown differs sharply between the two algorithms:
+   SPFA 0.022→0.200 ms is ≈9.1×, Bellman-Ford 0.056→0.189 ms is ≈3.4×). *(Corrected: this
+   sentence originally read "speedup ratio … 2.5× vs ~8.6×", which matched neither algorithm's
+   scaling; 2.5× was SPFA's lead over Bellman-Ford at V=20.)*
 
 **Caveats (same discipline as Run 1/2):** single-threaded, Apple M4, JIT-compiled Java with
 only 3 discarded warmup reps and 9 timed reps — these are directional numbers, not
@@ -437,3 +440,61 @@ Same op mix as the walk pattern, but PUT targets arrive in strict **ascending** 
 ### What changes in the verdicts
 
 None of the six picks changes. Three pieces of supporting evidence are corrected: the treap is a 2.2× loser, not a 105× one (§2); the walk-workload speed comparison between radix and red-black is a tie, so §1's verdict rests on memory and tick-range robustness alone (it already said so); Floyd-Warshall's rejection rests on its stated grounds, not on being slowest everywhere (§3). Docs 05 and 07 are updated accordingly.
+
+## Run 13 — Ladder v2b (2-3 tree, B-tree, B+ tree) and the deeper-book queue run
+
+Closes the two items Run 12 left open in Next. Same machine and harness as Run 12 (Linux container, interleaved timing, `--reps 9 --warmup 3`); every candidate passed its correctness gate. Before timing, the three new trees were additionally stress-tested against the oracle at bands 1–3,000 (the book empties and refills constantly — root collapse, borrow and merge paths) across 4 seeds, plus the sorted pattern: all 26 configurations passed.
+
+**New candidates** (`ladder/BTreeLadder.java`, `ladder/BPlusTreeLadder.java`):
+- **2-3 tree** = `BTreeLadder(3)`: a B-tree of order 3 (1–2 keys, 2–3 children).
+- **b-tree32** = `BTreeLadder(32)`: classic B-tree, keys + volumes in every node, ≤ 31 keys.
+- **b+tree32** = `BPlusTreeLadder`: entries only in doubly linked leaves (≤ 32 keys), separator-only internals; depth walks are one descent + a leaf-chain scan, O(log P + K), instead of the binary trees' repeated ceiling/floor, O(K log P).
+
+### 13a — Walk workload (`./run.sh ladder --n 300000 --seed {42,7} --reps 9 --warmup 3`)
+
+| structure | median ms (seed 42 / 7) | alloc B/op |
+|:---|--:|--:|
+| flat-array | 11.06 / 11.21 | 1.7 |
+| **b+tree32** | **28.40 / 27.58** | **1.1 / 1.2** |
+| bst | 30.57 / 30.32 | 10.5 |
+| radix16 | 30.94 / 31.29 | 8.6 |
+| red-black | 33.12 / 33.37 | 12.6 |
+| b-tree32 | 37.96 / 38.78 | 1.3 / 1.2 |
+| sorted-array | 38.55 / 38.42 | 16.0 |
+| avl | 44.15 / 42.71 | 10.5 |
+| skip-list | 50.35 / 53.76 | 83.6 |
+| oracle-treeMap | 52.84 / 50.16 | 57.8 |
+| splay | 56.99 / 63.35 | 10.5 |
+| 2-3-tree | 64.35 / 64.06 | 21.8 |
+| unsorted-array | 121.94 / 132.96 | 16.0 |
+
+Restructuring counters (seed 42): 2-3 tree 52,527 splits / 52,178 merges; b-tree32 666 splits / 643 merges (no rotations in either). Red-black / AVL / splay counters identical to Runs 10 and 12.
+
+**Wide range** (`--range 16777216`, seed 42): b+tree32 26.73 ms / 1.1 B/op, b-tree32 39.06 / 1.3, 2-3 tree 64.10 / 21.8, radix16 34.97 / 8.6, red-black 34.06 / 12.6, flat-array 3,396.72 / 447.4 — the B-family trees, like radix, are unaffected by tick range.
+
+**Sorted adversarial** (`--pattern sorted --n 12000 --band 4000`, seed 42): b+tree32 1.13 ms, b-tree32 1.51, 2-3 tree 2.31 — all in the balanced cluster (bst 43.26 ms).
+
+### Findings vs doc 05 §1
+
+1. **The B+ tree — the last unmeasured row of §1's table (rubric 3.60) — is the strongest tree candidate this lab has measured.** Fastest tree on the walk workload at both seeds (~9% ahead of radix16 — inside README rule 3c's tie band, so read it as "at least ties"), unaffected by tick range, balanced under sorted insertion, and **~7× less allocation per op than radix16** (1.1 vs 8.6 B/op). That last point matters: since Run 12c, §1's case for radix over red-black rests on memory and tick-range robustness. The B+ tree matches the robustness and beats radix on the memory metric this lab uses.
+2. **What radix still has over the B+ tree:** no restructuring at all (fixed 16-level depth, no splits, borrows or merges — the determinism argument), and less code (236 lines vs 306 for the B+ tree, whose split/borrow/merge paths on two node kinds are exactly the edge-case surface §1's Feasibility = 2 score anticipated). Neither shows up as a speed number on these workloads.
+3. **Caveat on the memory comparison:** alloc B/op is lifetime allocation churn, not resident footprint. The B+ tree allocates rarely (a new 33-slot node per split) while radix allocates a node per new path segment; resident memory per active level was not measured directly. A resident-footprint measurement is the natural next run if the team revisits §1.
+4. **The order matters:** the 2-3 tree (order 3) is the slowest balanced tree (~64 ms, ~2× red-black), paying ~52k splits and ~52k merges for a shape a red-black tree encodes with ~67k cheap rotations. Wide fan-out is what makes the B-family competitive — b-tree32 does ~100× fewer restructures.
+5. **B-tree vs B+ tree:** same fan-out, but b+tree32 is ~27% faster than b-tree32 here — the leaf chain turns each depth walk into one descent plus a sequential scan, where the B-tree repeats a root-to-leaf ceiling search per level. This is the "range scan" property B+ trees exist for, visible on a 12-level walk.
+
+**Verdict status:** this is new benchmark evidence of exactly the kind doc 07 §5 says is required to re-open a pick. It is recorded here and in doc 05 §1 as an open tension for the team to decide, **not** a unilateral change of the radix pick.
+
+### 13b — Deeper-book queue (`./run.sh queue --profile deep --n 300000 --seed {42,7} --reps 9 --warmup 3`)
+
+Profile `deep` (`QueueWorkload` javadoc): per 1000 ops 500 enqueue / 300 dequeue / 150 cancel / 50 peek — 30% of arrivals cancelled, book grows to ~15k live orders (seed 42: 44,643 cancels, final depth 15,397).
+
+| structure | median ms (seed 42 / 7) | vs pick | alloc B/op |
+|:---|--:|--:|--:|
+| oracle-linkedMap (JDK baseline) | 11.53 / 13.51 | 1.2–1.3× | 48.5 |
+| array (shift-on-cancel) | 126.23 / 130.04 | **12–13×** | 1.7 |
+| singly-list | 415.67 / 446.41 | 42–44× | 16.0 |
+| dll-no-index | 483.14 / 481.17 | 45–51× | 20.0 |
+| tree-by-id (treap) | 27.71 / 34.09 | 2.9–3.2× | 24.0 |
+| **dll+hash (the pick)** | **9.54 / 10.73** | — | 20.9 |
+
+**Findings vs doc 05 §2:** the honest surprise from Runs 6/12a — the plain array tying the pick on a shallow book — **does not survive depth**: at ~15k live orders and a 30% cancel rate the array is 12–13× slower and the un-indexed lists 42–51× slower, while the pick's time barely moves (8–10 ms → 9.5–10.7 ms). The treap's O(log n) penalty grows modestly with depth (2.2× → ~3×). The pick wins decisively in the regime a busy book actually reaches.

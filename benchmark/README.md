@@ -51,7 +51,7 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 
 - [x] **Ladder v1** — unsorted array, sorted array, flat array, skip list, radix-16 (+ TreeMap baseline/oracle)
 - [x] **Ladder v2a** — BST, AVL, splay, red-black hand-rolled (rotation counters; RB retires the TreeMap stand-in — see RESULTS.md Run 10)
-- [ ] **Ladder v2b** — 2-3 tree, B-tree, B+ (syllabus trees; B+ is doc 05 §1's last unmeasured row)
+- [x] **Ladder v2b** — 2-3 tree (B-tree order 3), B-tree order 32, B+ tree order 32 (see RESULTS.md Run 13a)
 - [x] **Queue** — array, singly LL, DLL, DLL+hash, tree-by-ID (order queue + O(1) cancel; seeded 300k-op workload, oracle-gated — see RESULTS.md Run 6)
 - [x] **Cache** — hash chaining, open addressing, hash+LRU, splay (Zipf workloads; full-residency LRU verification — see RESULTS.md Run 7)
 - [x] **Arbitrage** — Bellman-Ford, SPFA, Floyd-Warshall, Johnson, Tarjan+BF (negative cycles; real Frankfurter data + synthetic, oracle-gated at small V)
@@ -69,7 +69,9 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 # adversarial sorted-insertion variant of the ladder bench (BST degeneration demo)
 
 ./run.sh queue --n 300000 --seed 42 --reps 7 --warmup 3
-# queue flags: --n --seed --reps --warmup --out
+./run.sh queue --profile deep --n 300000 --seed 42 --reps 7 --warmup 3
+# queue flags: --n --seed --reps --warmup --profile shallow|deep --out
+# "deep" = 30% cancel rate, ~15k-order resting book (RESULTS.md Run 13b)
 
 ./run.sh cache --n 300000 --seed 42 --reps 7 --warmup 3
 # cache flags: --n --seed --reps --warmup --universe --capacity --zipf --out

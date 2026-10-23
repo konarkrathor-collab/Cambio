@@ -53,7 +53,7 @@ Timeline Overview (Weeks 1 - 14):
   * **Live Order Book Depth Visualizer:** Real-time bid/ask ladder and cumulative volume depth chart.
   * **Interactive Forex Graph Map:** Force-directed network graph (D3.js / Canvas) where detected arbitrage loops glow and pulse.
   * **Simulation & Stress-Test Dashboard:** Sliders for speed, volume, and rate volatility, displaying real-time FPS, latency, and throughput counters.
-  * **Under-the-Hood Inspector:** Interactive tree/list view showing the internal Red-Black Tree and Doubly Linked List states changing live.
+  * **Under-the-Hood Inspector:** Interactive tree/list view showing the internal Radix Tree and Doubly Linked List states changing live.
 * **Deliverable:** Functional local web application with real-time UI/UX.
 
 ---

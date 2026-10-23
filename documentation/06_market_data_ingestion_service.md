@@ -79,7 +79,7 @@ Not every cross-pair in an 8-currency complete graph is directly streamed by Fin
 
 | Parameter | Default | Meaning |
 | :--- | :-: | :--- |
-| `FINNHUB_API_KEY` | *(env var, required)* | Auth token for both WebSocket and REST fallback |
+| `FINNHUB_API_KEY` | *(env var, required)* | Auth token for the Finnhub WebSocket (and the one-time build-time discovery REST calls). The Frankfurter fallback is keyless and does not use it |
 | `SUBSCRIBE_SYMBOLS` | the ~12-16 direct pairs from §4 | Sent as `{"type":"subscribe","symbol":"OANDA:EUR_USD"}` per symbol on connect |
 | `SCAN_THROTTLE_MS` | `500` | Minimum gap between consecutive Bellman-Ford scans, even under a tick burst |
 | `RECONNECT_BACKOFF_MS` | `1000, 2000, 4000, 8000, 10000 (cap)` | WebSocket reconnect delay sequence on disconnect |

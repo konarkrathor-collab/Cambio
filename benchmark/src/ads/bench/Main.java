@@ -21,6 +21,8 @@ import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
 import ads.bench.core.Interleaved;
 import ads.bench.ladder.AvlLadder;
+import ads.bench.ladder.BPlusTreeLadder;
+import ads.bench.ladder.BTreeLadder;
 import ads.bench.ladder.BstLadder;
 import ads.bench.ladder.FlatArrayLadder;
 import ads.bench.ladder.LadderBench;
@@ -77,7 +79,7 @@ public final class Main {
     System.out.println("   or: run.sh arbitrage [--graph real|synthetic] [--v V]"
         + " [--inject true|false] [--seed S] [--reps R] [--warmup W] [--out FILE]");
     System.out.println("   or: run.sh queue [--n N] [--seed S] [--reps R] [--warmup W]"
-        + " [--out FILE]");
+        + " [--profile shallow|deep] [--out FILE]");
     System.out.println("   or: run.sh cache [--n N] [--seed S] [--reps R] [--warmup W]"
         + " [--universe U] [--capacity C] [--zipf S] [--out FILE]");
     System.out.println("   or: run.sh ticker [--n N] [--seed S] [--reps R] [--warmup W]"
@@ -171,6 +173,9 @@ public final class Main {
     candidates.put("avl", AvlLadder::new);
     candidates.put("red-black", RedBlackLadder::new);
     candidates.put("splay", SplayLadder::new);
+    candidates.put("2-3-tree", () -> new BTreeLadder(3));
+    candidates.put("b-tree32", () -> new BTreeLadder(32));
+    candidates.put("b+tree32", BPlusTreeLadder::new);
 
     AllocCounter alloc = new AllocCounter();
     System.out.println("alloc counter: " + (alloc.isEnabled() ? "enabled" : "UNAVAILABLE"));
@@ -221,6 +226,14 @@ public final class Main {
     System.out.printf("  avl:       %d rotations (insert %d, delete %d)%n",
         avlCounter.rotations(), avlCounter.insertRotations(), avlCounter.deleteRotations());
     System.out.printf("  splay:     %d restructure rotations%n", splayCounter.rotations());
+    BTreeLadder twoThree = new BTreeLadder(3);
+    LadderBench.replay(twoThree, w);
+    BTreeLadder bTree = new BTreeLadder(32);
+    LadderBench.replay(bTree, w);
+    System.out.printf("  2-3 tree:  %d splits, %d merges (no rotations)%n",
+        twoThree.splits(), twoThree.merges());
+    System.out.printf("  b-tree32:  %d splits, %d merges (no rotations)%n",
+        bTree.splits(), bTree.merges());
 
     System.out.println();
     System.out.println(anyFailed
@@ -385,12 +398,14 @@ public final class Main {
     }
   }
 
-  /** Queue bench: ./run.sh queue [--n N] [--seed S] [--reps R] [--warmup W] [--out FILE] */
+  /** Queue bench: ./run.sh queue [--n N] [--seed S] [--reps R] [--warmup W]
+   *  [--profile shallow|deep] [--out FILE] */
   private static void runQueue(String[] args) throws IOException {
     int n = 300_000;
     long seed = 42;
     int reps = 7;
     int warmup = 3;
+    String profile = "shallow";
     String outPath = "results/raw_results.csv";
     for (int i = 1; i + 1 < args.length; i += 2) {
       String k = args[i];
@@ -400,6 +415,7 @@ public final class Main {
         case "--seed": seed = Long.parseLong(v); break;
         case "--reps": reps = Integer.parseInt(v); break;
         case "--warmup": warmup = Integer.parseInt(v); break;
+        case "--profile": profile = v; break;
         case "--out": outPath = v; break;
         default:
           usage();
@@ -408,7 +424,7 @@ public final class Main {
     }
 
     final long fSeed = seed;
-    QueueWorkload w = QueueWorkload.generate(n, fSeed);
+    QueueWorkload w = QueueWorkload.generate(n, fSeed, profile);
     System.out.println("workload: " + w.describe());
 
     // Oracle: the correctness gate
@@ -453,7 +469,9 @@ public final class Main {
         anyFailed |= problem != null;
       }
       final int fReps = reps;
-      timeAndWrite("queue", problems, trials, new LinkedHashMap<>(), w.n, w.seed, warmup, reps,
+      Map<String, String> notes = new LinkedHashMap<>();
+      for (String name : candidates.keySet()) notes.put(name, "profile=" + w.profile);
+      timeAndWrite("queue", problems, trials, notes, w.n, w.seed, warmup, reps,
           alloc, 1, w.n, (name, why) -> QueueBench.failed("queue", name, w, fReps, why), csv);
     }
 

@@ -18,7 +18,8 @@ A full-stack, high-throughput trading exchange and forex market scanner:
 
 ## 📁 Repository Structure
 ```
-Mini Project/
+order-matching-arbitrage-detector/
+├── README.md                                  # This file
 ├── documentation/
 │   ├── README.md                              # Documentation Index
 │   ├── 00_group_and_course_details.md         # Member & Course Information
@@ -29,7 +30,14 @@ Mini Project/
 │   ├── 05_data_structure_selection_rationale.md # Why: Comparative Survey, Now Benchmark-Verified
 │   ├── 06_market_data_ingestion_service.md    # Real-Time Forex via Finnhub WebSocket + Fallback
 │   └── 07_team_workplan_and_phases.md         # Team Split, Backend Modules & Execution Phases
-└── ...
+└── benchmark/                                 # Benchmark lab: measured evidence behind doc 05
+    ├── README.md                              # Pipeline, fairness rules, how to build & run
+    ├── HANDOFF_DEEPSEEK.md                    # Original task brief for the benchmark modules
+    ├── build.sh / run.sh                      # Plain-javac build + CLI runner (no build tool)
+    ├── data/                                  # Archived real Frankfurter rate snapshot
+    ├── results/                               # RESULTS.md (narrative, Runs 1–13) + raw_results.csv
+    └── src/ads/bench/                         # core harness + ladder, queue, cache, arbitrage,
+                                               #   ticker, compression modules
 ```
 
-👉 Explore the full documentation in the **[documentation/](./documentation/README.md)** folder.
+👉 Explore the full documentation in the **[documentation/](./documentation/README.md)** folder, and the measured evidence in **[benchmark/](./benchmark/README.md)**.

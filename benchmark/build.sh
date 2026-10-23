@@ -10,6 +10,7 @@ fi
 
 rm -rf out
 mkdir -p out
-find src -name '*.java' > .sources.txt
-javac -d out @.sources.txt
-echo "Built $(wc -l < .sources.txt | tr -d ' ') source files -> out/"
+# the source list lives inside out/ (gitignored): regenerating it never dirties the tree
+find src -name '*.java' | sort > out/sources.txt
+javac -d out @out/sources.txt
+echo "Built $(wc -l < out/sources.txt | tr -d ' ') source files -> out/"

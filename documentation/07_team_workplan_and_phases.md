@@ -4,20 +4,20 @@ This document turns the validated data structure choices (doc 05) and system arc
 
 ---
 
-## 1. Status: the data structure question is closed
+## 1. Status: the data structure question is closed — except one flagged tension
 
-Every pick below was benchmarked from scratch against every realistic alternative (see `benchmark/results/RESULTS.md`, Runs 1–12, and doc 05's "Benchmark Evidence" subsections). This is no longer a design-stage prediction — it is a measured result. Nothing in Phases 2 onward should re-open this question.
+Every pick below was benchmarked from scratch against every realistic alternative (see `benchmark/results/RESULTS.md`, Runs 1–13, and doc 05's "Benchmark Evidence" subsections). This is no longer a design-stage prediction — it is a measured result. Five of the six picks are settled; the price-ladder pick has one open tension from Run 13a (see the note under the table) that the team should resolve at the sync. Beyond that, nothing in Phases 2 onward should re-open this question.
 
 | Subsystem | Final data structure | Confirmed by |
 | :--- | :--- | :--- |
-| Order book price list | **Radix Tree** (16-ary) | Run 1, 2, 10, 11, 12c |
-| Order queue (FIFO + cancel) | **Doubly Linked List + Hash Map** | Run 6, 12a |
+| Order book price list | **Radix Tree** (16-ary) — *open tension, see below* | Run 1, 2, 10, 11, 12c, 13a |
+| Order queue (FIFO + cancel) | **Doubly Linked List + Hash Map** | Run 6, 12a, 13b |
 | Currency arbitrage scanner | **Directed Graph + Bellman-Ford** | Run 3, 4, 5, 12b |
 | Trader account cache | **Hash Map + LRU** | Run 7, 12d |
 | Currency ticker lookup/autocomplete | **Trie** | Run 8, 12d |
 | Trade log compression | **Huffman Coding** | Run 9 |
 
-Run 12 re-checked these picks after a harness-fairness review: no verdict changed, but some supporting speed margins were corrected (e.g. Radix vs Red-Black is a speed tie — Radix's case is memory and tick-range robustness). Two optional, non-blocking items remain open (do not let them delay Phase 2+): Ladder v2b (2-3 tree / B-tree / B+ — syllabus coverage, not a live candidate) and a deeper-book adversarial queue run. Pick these up opportunistically if time allows later in the roadmap.
+Run 12 re-checked these picks after a harness-fairness review: no verdict changed, but some supporting speed margins were corrected (e.g. Radix vs Red-Black is a speed tie — Radix's case is memory and tick-range robustness). The two previously open items are done (Run 13). One of them produced new evidence the team should look at **before Slice A starts Phase 2**: the B+ tree (order 32) ties or beats the Radix Tree on every axis the lab measures — walk speed, tick-range robustness, allocation per op (~7× less) — while Radix keeps zero restructuring and less code (doc 05 §1, RESULTS.md Run 13a). Per §5 below, this is benchmark evidence, so re-opening the price-ladder pick is legitimate; decide at the team sync, optionally after the queued resident-footprint measurement. The deeper-book queue run (13b) confirmed DLL + Hash Map decisively.
 
 ---
 

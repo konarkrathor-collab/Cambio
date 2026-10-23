@@ -18,6 +18,14 @@ import java.util.HashMap;
  * and the remaining ~2% accumulate as resting depth so the queue stays populated and all
  * paths stay exercised. PEEK models the matching engine's pre-trade best-order check.
  *
+ * <p><b>Profile {@code "deep"}</b> (the deeper-book adversarial run): per 1000 ops — 500
+ * ENQUEUE, 300 DEQUEUE-head, 150 CANCEL-by-id, 50 PEEK. 30% of arrivals are cancelled
+ * before execution (the busy end of the commonly cited band; HFT-heavy books run far
+ * higher) and ~10% accumulate, so the resting book grows to ~15k live orders over a 300k-op
+ * session instead of ~3k. This is the regime the default profile could not reach: every
+ * candidate whose cancel is O(depth) (array shift, un-indexed lists) is now scanning a book
+ * five times deeper, three to four times as often. Default {@code "shallow"} is unchanged.
+ *
  * <p><b>Liveness tracking:</b> the generator mirrors the queue's FIFO order itself — an
  * arrival deque plus a swap-remove live list — so every CANCEL targets an order that is
  * really still queued, and DEQUEUE ops name no id at all (the candidate pops its own
@@ -32,15 +40,17 @@ public final class QueueWorkload {
 
   public final int n;
   public final long seed;
+  public final String profile;
   public final int finalDepth; // live orders at the end of generation
   public final byte[] op;
   public final long[] orderId; // target id for ENQUEUE / CANCEL; unused otherwise
   public final long[] volume;  // volume for ENQUEUE; unused otherwise
 
-  private QueueWorkload(int n, long seed, int finalDepth, byte[] op, long[] orderId,
-      long[] volume) {
+  private QueueWorkload(int n, long seed, String profile, int finalDepth, byte[] op,
+      long[] orderId, long[] volume) {
     this.n = n;
     this.seed = seed;
+    this.profile = profile;
     this.finalDepth = finalDepth;
     this.op = op;
     this.orderId = orderId;
@@ -48,6 +58,25 @@ public final class QueueWorkload {
   }
 
   public static QueueWorkload generate(int n, long seed) {
+    return generate(n, seed, "shallow");
+  }
+
+  public static QueueWorkload generate(int n, long seed, String profile) {
+    int enqCut;
+    int deqCut;
+    int canCut; // per-mille cumulative thresholds; the remainder is PEEK
+    if (profile.equals("shallow")) {
+      enqCut = 500;
+      deqCut = 950;
+      canCut = 990;
+    } else if (profile.equals("deep")) {
+      enqCut = 500;
+      deqCut = 800;
+      canCut = 950;
+    } else {
+      throw new IllegalArgumentException("unsupported profile: " + profile
+          + " (supports: shallow, deep)");
+    }
     Rng rng = new Rng(seed);
     byte[] op = new byte[n];
     long[] orderId = new long[n];
@@ -63,9 +92,9 @@ public final class QueueWorkload {
         o = ENQUEUE; // never dequeue/peek an empty book in a live market
       } else {
         int roll = rng.nextInt(1000);
-        if (roll < 500) o = ENQUEUE;
-        else if (roll < 950) o = DEQUEUE;
-        else if (roll < 990) o = CANCEL;
+        if (roll < enqCut) o = ENQUEUE;
+        else if (roll < deqCut) o = DEQUEUE;
+        else if (roll < canCut) o = CANCEL;
         else o = PEEK;
       }
       switch (o) {
@@ -102,7 +131,7 @@ public final class QueueWorkload {
       }
       op[i] = o;
     }
-    return new QueueWorkload(n, seed, live.size(), op, orderId, volume);
+    return new QueueWorkload(n, seed, profile, live.size(), op, orderId, volume);
   }
 
   private static void removeLive(ArrayList<Long> live, HashMap<Long, Integer> livePos, long id) {
@@ -127,7 +156,8 @@ public final class QueueWorkload {
         default: peek++; break;
       }
     }
-    return String.format("n=%d seed=%d | enqueue=%d dequeue=%d cancel=%d peek=%d | finalDepth=%d",
-        n, seed, enq, deq, can, peek, finalDepth);
+    return String.format(
+        "n=%d seed=%d profile=%s | enqueue=%d dequeue=%d cancel=%d peek=%d | finalDepth=%d",
+        n, seed, profile, enq, deq, can, peek, finalDepth);
   }
 }

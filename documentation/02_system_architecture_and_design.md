@@ -25,7 +25,7 @@ The system is architected as an event-driven, full-stack application composed of
 |                                                                                               |
 |  - POST /api/orders (Submit Limit/Market Order)         - POST /api/market/rates (Update Rate)|
 |  - DELETE /api/orders/:id (Cancel Order)                - GET  /api/arbitrage/scan (Run Scan) |
-|  - GET  /api/orderbook (Get Snapshot)                   - WS   /ws/live-stream (Live Updates) |
+|  - GET  /api/orderbook (Get Snapshot)                   - WS   /ws/live-market (Live Updates) |
 +-----------------------------------------------^-----------------------------------------------+
                                                 |
 +-----------------------------------------------v-----------------------------------------------+
@@ -37,7 +37,7 @@ The system is architected as an event-driven, full-stack application composed of
 |  | Radix Tree (Bids & Asks)              |          | Directed Weighted Graph              |  |
 |  | - Maintains sorted price levels       |          | - Vertices: Currency codes (USD, EUR)|  |
 |  | - Root/Min/Max peek: O(1)             |          | - Directed Edges: Exchange rates     |  |
-|  | - Level insertion/deletion: O(1) for   |      | - Weights: w = -ln(Exchange_Rate)    |  |
+|  | - Level insertion/deletion: O(1) for  |          | - Weights: w = -ln(Exchange_Rate)    |  |
 |  |   fixed key width (fixed nibble depth)|          |                                      |  |
 |  +-------------------+-------------------+          +-------------------+------------------+  |
 |                      |                                                  |                     |
@@ -125,7 +125,7 @@ The system is architected as an event-driven, full-stack application composed of
 [User submits Buy Limit Order: 50 USD at $1.08]
                      |
                      v
-[Backend validates balance via Splay Tree Cache (O(log N))]
+[Backend validates balance via Hash Map + LRU Account Cache (O(1) avg)]
                      |
                      v
 [Check best Ask in asksTree (Min node in O(1))]
@@ -137,7 +137,7 @@ The system is architected as an event-driven, full-stack application composed of
         YES                              NO
          |                               |
          v                               v
-[Execute Trade match]           [Insert price $1.08 into bidsTree (O(log P))]
+[Execute Trade match]           [Insert price $1.08 into bidsTree (O(1), fixed 16-nibble depth)]
 [Update Ask Queue (O(1))]       [Enqueue order to $1.08 Doubly Linked List (O(1))]
 [Log trade to Huffman buffer]   [Register orderId in Hash Map (O(1))]
          |                               |
