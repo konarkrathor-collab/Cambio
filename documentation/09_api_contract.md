@@ -1,6 +1,6 @@
 # API Contract (Stage 3)
 
-**Status: draft for review.** It freezes once the supervisor accepts it (doc 08 §4 and Stage 3); the frontend (Stage 5) builds against the frozen version. Every example in §7 is a real request and its real response, captured from a running server by `backend/scripts/contract_examples.sh`. Re-run that script to regenerate them. Timestamps and `uptimeMs` change between runs; nothing else does.
+**Status: FROZEN** (accepted by the supervisor, 2026-10-24). The frontend (Stage 5) builds against this version. Existing endpoints, fields, status codes and error codes do not change. Additive changes (a new endpoint, a new optional response field) are allowed only with the supervisor's approval and must be added to this document in the same commit. Every example in §7 is a real request and its real response, captured from a running server by `backend/scripts/contract_examples.sh`. Re-run that script to regenerate them. Timestamps and `uptimeMs` change between runs; nothing else does.
 
 Server: `backend/run.sh serve [--host 127.0.0.1] [--port 8080] [--data-dir data] [--seed-demo-accounts] [--min-profit 0.02] [--port-file FILE]`. It binds to `127.0.0.1:8080` by default.
 

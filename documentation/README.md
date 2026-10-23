@@ -25,7 +25,7 @@ Welcome to the technical documentation repository for the **Advanced Data Struct
 | **[06_market_data_ingestion_service.md](./06_market_data_ingestion_service.md)** | Market Data Ingestion Service | Real-time forex via Finnhub WebSocket (OANDA feed), reconnect/fallback handling, cross-rate derivation |
 | **[07_team_workplan_and_phases.md](./07_team_workplan_and_phases.md)** | Team Workplan & Execution Phases | Locked data structure list, backend module breakdown, three-person vertical ownership split, Phase 2–7 plan |
 | **[08_build_plan_and_acceptance.md](./08_build_plan_and_acceptance.md)** | Build Plan & Acceptance Gates | Confirmed stack (Java / Python feed / React), repository layout, rules, Stage 0–7 plan with verification gates, matching rules and feed payloads |
-| **[09_api_contract.md](./09_api_contract.md)** | API Contract (Stage 3) | Every endpoint, field, error code and SSE event of the backend gateway, with real captured requests and responses (draft until the supervisor freezes it) |
+| **[09_api_contract.md](./09_api_contract.md)** | API Contract (Stage 3) | Every endpoint, field, error code and SSE event of the backend gateway, with real captured requests and responses (frozen; additive changes only) |
 
 ---
 
