@@ -44,14 +44,14 @@ Runtime output (`backend/out/`, `backend/data/`, `frontend/node_modules/`, `fron
 5. **Secrets stay out of the repo.** `FINNHUB_API_KEY` is read from the environment only. Never in code, config files, logs, docs or commit messages.
 
 **Engineering rules**
-6. **Five structure choices are closed** (doc 05): Doubly Linked List + Hash Map order queue, Bellman-Ford scanner, Hash Map + LRU account cache, Trie ticker directory, Huffman logbook. **The price-ladder pick is an open decision** (see §3a) and the engine must not hard-wire either candidate. Do not swap a closed choice without new benchmark evidence.
+6. **The structure choices are closed:** B+ tree price ladder (decided in §3a after benchmark Runs 12–14), Doubly Linked List + Hash Map order queue, Bellman-Ford scanner, Hash Map + LRU account cache, Trie ticker directory, Huffman logbook. The engine depends on the ladder only through the `PriceLadder` interface. Do not swap a choice without new benchmark evidence.
 7. **From scratch.** Inside the production structures and the matching hot path, no `java.util` collections (`HashMap`, `ArrayList`, `TreeMap`, `PriorityQueue`…). `java.util` is fine in the HTTP layer, JSON, persistence, and in tests/oracles.
 8. **Integer arithmetic in the matching path.** Prices are integer ticks (`long`), quantities are `long`. No `double`/`float` anywhere an order is priced, matched or settled.
 9. **Deterministic engine.** One thread mutates the engine. Time inside the engine is a monotonically increasing sequence number, not wall-clock. The same order log must always produce the same trades.
 10. **Tests are the gate.** Every structure and the matching loop is checked against an *independent* reference. A bug found along the way is written up (what broke, why, the fix) in `backend/BUGS.md`, not silently fixed — same norm as `benchmark/results/RESULTS.md` Run 4.
 11. No stage re-opens a closed structure choice, the API contract after it is frozen (Stage 3), or the benchmark code.
 
-### 3a. Open decision — the price ladder (decide before the ladder is ported)
+### 3a. Decision — the price ladder
 
 After Runs 12–14 (`benchmark/results/RESULTS.md`), the Radix Tree no longer has a measured advantage over the alternatives:
 
@@ -61,11 +61,13 @@ After Runs 12–14 (`benchmark/results/RESULTS.md`), the Radix Tree no longer ha
 | **B+ tree** (order 32) | ties or beats radix (~9% ahead) | yes | **~29 B/level (leanest)**, ~7× less allocation churn | 306 lines, split/borrow/merge paths |
 | **Red-Black tree** | tie with radix | yes | 48 B/level | simplest balanced tree |
 
-Radix's remaining case is *zero restructuring and less code*. The B+ tree is already implemented and oracle-validated in `benchmark/`, which lowers its porting risk; Stage 0's parity gate would catch any slip. **Recommendation: port the B+ tree** (the evidence now favours it on every axis the lab measured, and "we benchmarked our own first pick and replaced it" is a strong account for the viva) — but this is the team's call. Until it is made:
+Radix's remaining case is *zero restructuring and less code*. The B+ tree is already implemented and oracle-validated in `benchmark/`, which lowers its porting risk; Stage 0's parity gate would catch any slip.
 
-- Stage 0 ports the **five closed structures first**.
-- The engine depends only on a `PriceLadder` interface (best-bid/ask, insert level, remove level, walk K levels; each leaf holds a `PriceLevel`), so the choice is a drop-in.
-- The ladder port starts once the decision is recorded here and in doc 07.
+**Decision: the price ladder is the B+ tree (order 32).** The evidence favours it on every axis the lab measured, and "we benchmarked our own first pick and replaced it" is a strong account for the viva. It remains reversible, and to keep it so:
+
+- The engine depends only on a `PriceLadder` interface (best-bid/ask, insert level, remove level, walk K levels; each leaf holds a `PriceLevel`), never on the B+ tree class directly, so Radix or Red-Black can be dropped in later without touching the matching loop.
+- Stage 0 ports all six structures, the ladder being the B+ tree, and it must pass the same walk, wide-range and sorted parity workloads as the benchmark version.
+- The team can still reverse this at the sync on new benchmark evidence (§3 rule 11).
 
 ---
 
@@ -81,8 +83,8 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 
 ### Stage 0 — Port the structures into the backend
 
-**Build.** Production versions of the structures under `backend/src/ads/…`, ported from `benchmark/src/ads/bench/…` — the five closed ones first, the price ladder once §3a is decided. Changes from the benchmark versions are limited to what production needs:
-- The price ladder (whichever §3a selects) stores a **`PriceLevel`** at each leaf (price tick, total volume, an order queue head/tail) instead of just a volume — the matching engine needs the queue at the level. Bids and asks each get their own ladder (best-ask = min, best-bid = max).
+**Build.** Production versions of the six structures under `backend/src/ads/…`, ported from `benchmark/src/ads/bench/…`. Changes from the benchmark versions are limited to what production needs:
+- The price ladder (the B+ tree, §3a) stores a **`PriceLevel`** at each leaf (price tick, total volume, an order queue head/tail) instead of just a volume — the matching engine needs the queue at the level. Bids and asks each get their own ladder (best-ask = min, best-bid = max).
 - The order queue becomes: a doubly linked list per `PriceLevel` plus **one global order index** (own hash table, `orderId → Order node`, chaining, resize at load 0.75) so cancel is O(1) and can reach the right level via the node's level pointer.
 - Bellman-Ford keeps `CycleTrace`; cache keeps hash + LRU; trie keeps the child bitmap; Huffman keeps its byte-exact codec.
 - Strip benchmark-only scaffolding (timing hooks, `dump` helpers used only by oracles).
@@ -91,7 +93,7 @@ Radix's remaining case is *zero restructuring and less code*. The B+ tree is alr
 
 **Gate.**
 - `backend/build.sh` clean; `backend/test.sh` all green.
-- All parity checks pass for every structure ported so far (the five closed ones, then the ladder once decided, which must also pass the walk, wide-range and sorted workloads).
+- All six parity checks pass, the ladder under the walk, wide-range and sorted workloads.
 - A grep proves no `java.util` import in any production structure class.
 - The report lists production-vs-benchmark timing for each structure (informational; a regression above 25% must be explained).
 

@@ -4,7 +4,7 @@ This document turns the validated data structure choices (doc 05) and system arc
 
 ---
 
-> **Stack and stage update:** the stack is now fixed as Java backend, Python data feed, React dashboard, and the stage-by-stage build and acceptance process is in [08_build_plan_and_acceptance.md](./08_build_plan_and_acceptance.md). The vertical slices below still apply to *ownership and explanation*: Slice B's Live Feed is the Python `feed/` process, and each slice's webpage is a React view.
+> **Stack and stage update:** the stack is now fixed as Java backend, Python data feed, React dashboard, and the stage-by-stage build and acceptance process is in [08_build_plan_and_acceptance.md](./08_build_plan_and_acceptance.md). The vertical slices below still apply to *ownership and explanation*: Slice B's Live Feed is the Python `feed/` process, and each slice's webpage is a React view. **Price-ladder decision:** the tension flagged in §1 is resolved in favour of the **B+ tree** (doc 08 §3a), kept reversible behind a `PriceLadder` interface; the team can still revisit it at the sync on new benchmark evidence.
 
 ## 1. Status: the data structure question is closed — except one flagged tension
 
