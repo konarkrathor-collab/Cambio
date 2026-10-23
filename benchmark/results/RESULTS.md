@@ -56,7 +56,7 @@ Flat-array at 447.4 B/op ≈ **≈134 MB per instance** — vs radix16's 8.6 B/o
 - [x] Ticker (hash set, sorted array, TST, trie; two-phase exact/prefix workload) — see Run 8
 - [x] Compression (RLE, LZW, Huffman, order-0 arithmetic; round-trip gate) — see Run 9
 - [x] Deeper-book adversarial queue run — see Run 13b (array 12–13× behind the pick at ~15k depth)
-- [ ] Resident-footprint (not churn) memory measurement for radix16 vs b+tree32 — raised by Run 13a
+- [x] Resident-footprint (not churn) memory measurement for every ladder candidate — see Run 14 (radix holds ~2× the B+ tree and 9–22% more than red-black)
 
 ---
 
@@ -498,3 +498,42 @@ Profile `deep` (`QueueWorkload` javadoc): per 1000 ops 500 enqueue / 300 dequeue
 | **dll+hash (the pick)** | **9.54 / 10.73** | — | 20.9 |
 
 **Findings vs doc 05 §2:** the honest surprise from Runs 6/12a — the plain array tying the pick on a shallow book — **does not survive depth**: at ~15k live orders and a 30% cancel rate the array is 12–13× slower and the un-indexed lists 42–51× slower, while the pick's time barely moves (8–10 ms → 9.5–10.7 ms). The treap's O(log n) penalty grows modestly with depth (2.2× → ~3×). The pick wins decisively in the regime a busy book actually reaches.
+
+## Run 14 — Resident footprint: what each price ladder actually holds in memory
+
+**Why:** every memory number before this run was `alloc B/op` — bytes *allocated* over a whole replay, divided by ops. That is churn, not footprint: a structure that allocates once and keeps it, and one that allocates and frees constantly, can score the opposite way from what each retains. Run 13a flagged that doc 05 §1's "radix has a ~32% memory edge over red-black" rests entirely on churn. This run measures **resident bytes** directly.
+
+**Method** (`./run.sh footprint <ladder flags>`; `core/DeepSize.java`; rows in `results/footprint_results.csv`): each candidate is oracle-gated exactly as in the timed bench, then a fresh instance replays the workload and the structure *as it stands at the end* is measured two independent ways:
+1. **Graph walk (deterministic):** every object reachable from the structure through instance fields, each counted once, sized with HotSpot layout rules read from the running JVM (here: 12 B object header, 16 B array header, 4 B compressed references, 8 B alignment). Includes everything the structure keeps — preallocated capacity, scratch buffers, unused child slots.
+2. **Live-heap delta (cross-check):** used heap after full GCs with the structure reachable, minus after it is dropped.
+
+The two agree to within ~1% for every node-based structure (most rows match to the byte) — the model is trustworthy. The array candidates show a larger heap delta (4.8 MB → 8.4 MB; 134.2 MB → 136.3 MB) because G1 stores objects that large in whole 4 MB "humongous" regions; that rounding is a real cost of a giant single array, recorded rather than smoothed over. Machine: same Linux container as Runs 12–13; all 65 measurements below passed the oracle gate.
+
+**Scenarios:** the standard book (`--n 300000`, ~450 live levels at the end) at seeds 42 and 7; the same at a 256× wider tick range (`--range 16777216`, seed 42); and a **large book** (`--range 16777216 --band 100000`, ~54,000 live levels) at seeds 42 and 7.
+
+| structure | B/level, standard book (seed 42 / 7) | B/level, large book (seed 42 / 7) | resident, large book (seed 42) |
+|:---|--:|--:|--:|
+| **b-tree32** | 31.3 / 30.6 | **28.5 / 28.4** | **1.54 MB** |
+| **b+tree32** | **30.6** / 32.5 | 28.9 / 28.6 | 1.57 MB |
+| avl | 40.1 / 40.1 | 40.0 / 40.0 | 2.17 MB |
+| splay | 40.1 / 40.1 | 40.0 / 40.0 | 2.17 MB |
+| bst | 40.2 / 40.2 | 40.0 / 40.0 | 2.17 MB |
+| red-black | 48.2 / 48.2 | 48.0 / 48.0 | 2.60 MB |
+| radix16 | 52.3 / 53.6 | 58.6 / 58.6 | 3.17 MB |
+| skip-list | 57.0 / 56.9 | 56.5 / 56.5 | 3.06 MB |
+| oracle-treeMap (boxed) | 88.1 / 88.1 | 88.0 / 88.0 | 4.77 MB |
+| 2-3-tree | 95.7 / 97.1 | 94.8 / 94.8 | 5.14 MB |
+| sorted-array / unsorted-array | 4.80 MB fixed (preallocated to n) | 88.6 | 4.80 MB (8.39 MB on the G1 heap) |
+| flat-array | 0.52 MB fixed (range 65,536) | 2,478 (range 16.7M) | 134.2 MB (136.3 MB on the G1 heap) |
+
+At the 256× wider range with the standard book, every structure's footprint is byte-identical to the narrow run **except flat-array** (0.52 MB → 134.2 MB). Range robustness, measured in resident bytes, holds for every tree and for radix.
+
+**Findings vs doc 05 §1:**
+
+1. **Radix's "memory edge" over red-black does not exist in resident memory — it reverses.** Radix16 holds **52–59 B per live level vs red-black's 48** — 9% more on the standard book, **22% more on the large book**. The "~32% edge" (8.6 vs 12.6 B/op) was churn: the red-black tree allocates a fresh 48 B node on every new level, while radix often re-walks path nodes that already exist. Doc 05 §1's sentence "radix keeps the ~32% memory edge" is withdrawn.
+2. **Where radix's bytes go:** a leaf is a 32 B node; every branching interior node adds a 16-slot child array (80 B with compressed references; 144 B with uncompressed 8-byte references, close to docs 02/03's "128 B/node" estimate). The ~80k objects for ~54k levels are those interior path nodes. Sparse ticks spread across a wide band need more of them, which is why radix's per-level cost *grows* from the standard to the large book (52 → 59 B) while every comparison tree stays flat.
+3. **The B-family trees are the leanest structures in the lab:** ~29 B/level, about **half of radix** and 40% below red-black. Each node packs up to 32 entries into two primitive arrays, so per-object overhead is paid once per ~20 entries. This confirms Run 13a's churn signal with the right metric: the B+ tree beats radix on resident memory by ~2×.
+4. **The 2-3 tree is the heaviest balanced tree** (~95 B/level): same node layout as the order-32 B-tree, but only 1–2 entries per node, so per-node overhead dominates. Fan-out is what makes the B-family lean.
+5. **Doc 05 §1's other claims, re-checked:** "memory scales with active price levels, not tick range" holds for radix (and for every tree). The flat array's range-proportional footprint is confirmed in resident bytes (134 MB to hold ~450 levels). The boxed `TreeMap` costs 88 B/level, 1.8× the hand-rolled red-black tree: the boxing caveat in Runs 1–2, quantified.
+
+**Verdict status:** after Runs 12c, 13a and 14, the Radix Tree pick has no remaining measured advantage over the B+ tree on speed (tie), tick-range robustness (tie), or memory (B+ ~2× leaner), and it uses ~9–22% more memory than red-black. Its remaining case is qualitative: zero restructuring (fixed 16-level depth; deterministic, input-order-independent) and less code than the B+ tree. Recorded in doc 05 §1 and doc 07 for the team's decision, not resolved here.

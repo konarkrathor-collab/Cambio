@@ -8,4 +8,5 @@ if [ ! -d out ]; then
   ./build.sh
 fi
 
-exec java -cp out ads.bench.Main "$@"
+# --add-opens lets the footprint bench walk java.util.TreeMap and its boxed Longs (oracle row only)
+exec java --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -cp out ads.bench.Main "$@"

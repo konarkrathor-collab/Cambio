@@ -19,6 +19,7 @@ import ads.bench.cache.OpenHashCache;
 import ads.bench.cache.SplayCache;
 import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
+import ads.bench.core.DeepSize;
 import ads.bench.core.Interleaved;
 import ads.bench.ladder.AvlLadder;
 import ads.bench.ladder.BPlusTreeLadder;
@@ -26,6 +27,7 @@ import ads.bench.ladder.BTreeLadder;
 import ads.bench.ladder.BstLadder;
 import ads.bench.ladder.FlatArrayLadder;
 import ads.bench.ladder.LadderBench;
+import ads.bench.ladder.LadderOps;
 import ads.bench.ladder.LadderWorkload;
 import ads.bench.ladder.RadixLadder;
 import ads.bench.ladder.RedBlackLadder;
@@ -86,6 +88,8 @@ public final class Main {
         + " [--out FILE]");
     System.out.println("   or: run.sh compression [--seed S] [--reps R] [--warmup W]"
         + " [--out FILE]");
+    System.out.println("   or: run.sh footprint [ladder flags]   (resident bytes per structure;"
+        + " default --out results/footprint_results.csv)");
   }
 
   public static void main(String[] args) throws IOException {
@@ -113,7 +117,8 @@ public final class Main {
       runCompression(args);
       return;
     }
-    if (!args[0].equals("ladder")) {
+    boolean footprint = args[0].equals("footprint");
+    if (!footprint && !args[0].equals("ladder")) {
       usage();
       System.exit(2);
     }
@@ -126,7 +131,7 @@ public final class Main {
     int range = 65_536;
     int band = 500;
     String pattern = "walk";
-    String outPath = "results/raw_results.csv";
+    String outPath = footprint ? "results/footprint_results.csv" : "results/raw_results.csv";
 
     for (int i = 1; i + 1 < args.length; i += 2) {
       String k = args[i];
@@ -162,20 +167,11 @@ public final class Main {
     System.out.println("oracle: checksum=0x" + Long.toHexString(oracleChecksum)
         + " levels=" + oracleState.size());
 
-    Map<String, LadderBench.Factory> candidates = new LinkedHashMap<>();
-    candidates.put("oracle-treeMap", TreeMapLadder::new);
-    candidates.put("unsorted-array", () -> new UnsortedArrayLadder(w.n));
-    candidates.put("sorted-array", () -> new SortedArrayLadder(w.n));
-    candidates.put("flat-array", () -> new FlatArrayLadder(fBase, fRange));
-    candidates.put("skip-list", () -> new SkipListLadder(fSeed ^ 0x5DEECE66DL));
-    candidates.put("radix16", RadixLadder::new);
-    candidates.put("bst", BstLadder::new);
-    candidates.put("avl", AvlLadder::new);
-    candidates.put("red-black", RedBlackLadder::new);
-    candidates.put("splay", SplayLadder::new);
-    candidates.put("2-3-tree", () -> new BTreeLadder(3));
-    candidates.put("b-tree32", () -> new BTreeLadder(32));
-    candidates.put("b+tree32", BPlusTreeLadder::new);
+    Map<String, LadderBench.Factory> candidates = ladderCandidates(w, fSeed, fBase, fRange);
+    if (footprint) {
+      runFootprint(candidates, w, oracleChecksum, oracleState, band, pattern, outPath);
+      return;
+    }
 
     AllocCounter alloc = new AllocCounter();
     System.out.println("alloc counter: " + (alloc.isEnabled() ? "enabled" : "UNAVAILABLE"));
@@ -272,6 +268,101 @@ public final class Main {
       System.out.println(r.row());
       csv.write(r.csv());
       csv.newLine();
+    }
+  }
+
+  /** Every price-ladder candidate, in report order (shared by the ladder and footprint benches). */
+  private static Map<String, LadderBench.Factory> ladderCandidates(LadderWorkload w, long seed,
+      long base, int range) {
+    Map<String, LadderBench.Factory> candidates = new LinkedHashMap<>();
+    candidates.put("oracle-treeMap", TreeMapLadder::new);
+    candidates.put("unsorted-array", () -> new UnsortedArrayLadder(w.n));
+    candidates.put("sorted-array", () -> new SortedArrayLadder(w.n));
+    candidates.put("flat-array", () -> new FlatArrayLadder(base, range));
+    candidates.put("skip-list", () -> new SkipListLadder(seed ^ 0x5DEECE66DL));
+    candidates.put("radix16", RadixLadder::new);
+    candidates.put("bst", BstLadder::new);
+    candidates.put("avl", AvlLadder::new);
+    candidates.put("red-black", RedBlackLadder::new);
+    candidates.put("splay", SplayLadder::new);
+    candidates.put("2-3-tree", () -> new BTreeLadder(3));
+    candidates.put("b-tree32", () -> new BTreeLadder(32));
+    candidates.put("b+tree32", BPlusTreeLadder::new);
+    return candidates;
+  }
+
+  /**
+   * Footprint bench: RESIDENT bytes each ladder candidate retains after replaying the
+   * workload (not AllocCounter's lifetime churn). Every candidate is oracle-gated first,
+   * exactly like the timed bench; a candidate that fails is reported FAIL and not measured.
+   * Two measurements per structure: the deterministic {@link DeepSize} graph walk, and a
+   * live-heap delta as an independent cross-check of that model.
+   */
+  private static void runFootprint(Map<String, LadderBench.Factory> candidates,
+      LadderWorkload w, long oracleChecksum, TreeMap<Long, Long> oracleState, int band,
+      String pattern, String outPath) throws IOException {
+    System.out.println("layout: " + DeepSize.layout());
+    System.out.println();
+    System.out.println(String.format("%-16s %8s %14s %10s %10s %14s %8s",
+        "structure", "levels", "resident_B", "B/level", "objects", "heapDelta_B", "valid"));
+    Path out = Paths.get(outPath);
+    if (out.getParent() != null) {
+      Files.createDirectories(out.getParent());
+    }
+    boolean needHeader = !Files.exists(out) || Files.size(out) == 0;
+    boolean anyFailed = false;
+    try (BufferedWriter csv = Files.newBufferedWriter(out, StandardCharsets.UTF_8,
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+      if (needHeader) {
+        csv.write("bench,structure,n,seed,range,band,pattern,valid,levels,resident_bytes,"
+            + "bytes_per_level,objects,heap_delta_bytes,note");
+        csv.newLine();
+      }
+      for (Map.Entry<String, LadderBench.Factory> e : candidates.entrySet()) {
+        String name = e.getKey();
+        String problem = LadderBench.verify(e.getValue().create(), w, oracleChecksum,
+            oracleState);
+        String prefix = "footprint," + name + "," + w.n + "," + w.seed + "," + w.range + ","
+            + band + "," + pattern + ",";
+        if (problem != null) {
+          anyFailed = true;
+          System.out.println(String.format("%-16s %8s %14s %10s %10s %14s %8s  %s",
+              name, "-", "-", "-", "-", "-", "FAIL", problem));
+          csv.write(prefix + "FAIL,0,0,0,0,0," + problem.replace(',', ';'));
+          csv.newLine();
+          continue;
+        }
+        Object[] holder = { e.getValue().create() };
+        LadderBench.replay((LadderOps) holder[0], w);
+        int levels = ((LadderOps) holder[0]).size();
+        String note = "";
+        long bytes = -1;
+        long objects = -1;
+        try {
+          DeepSize.Size sz = DeepSize.of(holder[0]);
+          bytes = sz.bytes;
+          objects = sz.objects;
+        } catch (RuntimeException ex) {
+          note = "graph walk unavailable: " + ex.getClass().getSimpleName();
+        }
+        long delta = DeepSize.heapDelta(holder); // drops holder[0]
+        double perLevel = bytes < 0 || levels == 0 ? Double.NaN : (double) bytes / levels;
+        System.out.println(String.format("%-16s %8d %14s %10s %10s %14d %8s  %s",
+            name, levels, bytes < 0 ? "n/a" : Long.toString(bytes),
+            Double.isNaN(perLevel) ? "n/a" : String.format("%.1f", perLevel),
+            objects < 0 ? "n/a" : Long.toString(objects), delta, "OK", note));
+        csv.write(prefix + "ok," + levels + "," + bytes + ","
+            + (Double.isNaN(perLevel) ? "" : String.format("%.2f", perLevel)) + "," + objects
+            + "," + delta + "," + note);
+        csv.newLine();
+      }
+    }
+    System.out.println();
+    System.out.println(anyFailed
+        ? "RESULT: FAILURES PRESENT (a structure disagreed with the oracle)"
+        : "RESULT: all candidates validated against the oracle; resident footprint measured");
+    if (anyFailed) {
+      System.exit(1);
     }
   }
 

@@ -42,7 +42,10 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 4. **Reporting** — median of R timed full-replay runs + min/max spread % (the spread IS the
    empirical "Determinism" data point for the rationale doc). `System.gc()` between runs.
 5. **Memory** — bytes-allocated-per-operation via the JVM's per-thread allocation counters
-   (fair, GC-timing independent) instead of RSS.
+   (fair, GC-timing independent) instead of RSS. That is allocation CHURN; for what a
+   structure actually RETAINS, the `footprint` bench (`core/DeepSize.java`) walks the
+   structure's object graph with this JVM's layout rules and cross-checks against the live
+   heap. Compare memory claims with footprint, not churn (see `results/RESULTS.md` Run 14).
 6. **No `java.util` containers inside candidates.** Allowed only in the oracle and harness.
 7. Single-threaded; run with nothing else heavy on the machine (M4 P/E-core scheduling adds
    noise — medians absorb it).
@@ -66,6 +69,10 @@ This is a lab, not shipped project code. Winning implementations graduate into t
 # ladder flags: --n --seed --reps --warmup --base --range --band --pattern --out
 
 ./run.sh ladder --pattern sorted --n 12000 --band 4000 --seed 42 --reps 7 --warmup 3
+
+./run.sh footprint --n 300000 --seed 42 --range 16777216 --band 100000
+# resident bytes per ladder structure after the replay (accepts every ladder flag);
+# appends to results/footprint_results.csv
 # adversarial sorted-insertion variant of the ladder bench (BST degeneration demo)
 
 ./run.sh queue --n 300000 --seed 42 --reps 7 --warmup 3
