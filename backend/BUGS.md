@@ -123,13 +123,31 @@ ads-feed/1.0 (+https://github.com/lifeknife10A/order-matching-arbitrage-detector
 
 ---
 
-## Note for review (not a bug): real OANDA ticks show "arbitrage" above 0.001% almost all the time
+## Note (not a bug): real OANDA ticks show "arbitrage" above 0.001% almost all the time. Resolved by a data-driven threshold (Stage 2 addendum)
 
-The first live capture, replayed through the backend, reports cycles such as `CHF -> USD -> CAD -> CHF` at +0.0056%. These are not bugs in the scanner. The cycle is real in the ticked numbers:
-- Finnhub's OANDA ticks are single prices with no bid/ask spread.
-- Each leg's tick arrives at a slightly different moment.
+The first live capture, replayed through the backend, reports cycles such as `CHF -> USD -> CAD -> CHF` at +0.0056%. The ticks alternate between bid and ask, and each leg arrives at a slightly different moment, so these cycles exist in the numbers but could not be traded. `backend/run.sh threshold-study` replays the committed capture offline, in recorded time, with the server's rules: each quote usable for 30 s, scans throttled to 500 ms.
 
-The doc 08 threshold of 0.001% is below a typical retail FX spread (about 0.005–0.02% per leg), so these cycles could not be traded. I have left the threshold as specified. Whether the dashboard should use a higher threshold for live data, or show it next to the spread, is a product decision.
+```
+capture: ../feed/samples/finnhub_ticks_2026-10-23.jsonl (3690 ticks over 299 s, 432 throttled scans)
+best-cycle profit per scan (exhaustive): p50 0.01070%  p90 0.01314%  p99 0.01562%  max 0.01652%
+threshold   scanner reports a cycle      exhaustive: some cycle >= threshold
+  0.001%     429 / 432  ( 99.31%)        429 / 432  ( 99.31%)
+  0.005%     427 / 432  ( 98.84%)        427 / 432  ( 98.84%)
+  0.010%      58 / 432  ( 13.43%)        286 / 432  ( 66.20%)
+  0.020%       0 / 432  (  0.00%)          0 / 432  (  0.00%)
+  0.050%       0 / 432  (  0.00%)          0 / 432  (  0.00%)
+recommended default: 0.020% (smallest threshold with fewer than 1% of scans reporting a cycle)
+```
+
+The default is now 0.02% (`ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT`). It can be overridden with `serve --min-profit PERCENT` or `MIN_PROFIT_PERCENT`. The demo's injected +0.4% is still detected. The table is also in doc 06 §5.
+
+---
+
+## B8: Near the threshold, the scanner misses most real cycles (Stage 2 addendum, measured; not fixed)
+
+**What the threshold study showed.** At a 0.010% threshold, an exhaustive search over every simple cycle finds a cycle of at least 0.010% in 286 of 432 scans of the real capture. The scanner reports one in only 58. This is the gap B4 documented, and on real data it is large. Live ticks produce many cycles of almost the same profit, about 0.01%. On a shifted pass, Bellman-Ford returns *some* negative cycle, usually one just under the threshold, so no shifted pass returns the qualifying one. The 3,000 random graphs in the brute-force test never showed this. Real bid/ask noise does.
+
+**Why it is not fixed now.** It does not affect the chosen default. At 0.02% both the scanner and the exhaustive search report 0 of 432 scans, and the largest real cycle was 0.0165%. A complete fix is possible for the live graph (7 currencies, about 2,400 simple cycles, cheap to enumerate exhaustively whenever the base pass finds a negative cycle). It would not scale to the 12-currency fallback graph, where the number of cycles explodes. That fallback graph is consistent through USD, though, so its base pass already returns early. This is a design decision for the supervisor, not an implementer's call.
 
 ---
 

@@ -57,6 +57,14 @@ final class ApiTests {
     r.check("throttle: 50 ticks in 100 ms scan once in the window, plus one trailing scan of"
         + " the newest rates", ApiTests::throttle);
     r.check("a replayed capture is labelled replay=true in the status", ApiTests::replayFlag);
+    r.check("addendum 1: quotes older than 30 s leave the scan (excluded edges counted)",
+        ApiTests::staleEdgesLeaveScan);
+    r.check("addendum 1: a dead feed's alert goes away with no new payload (sweep re-scan)",
+        ApiTests::deadFeedAlertEnds);
+    r.check("addendum 1: live and fallback rates never meet in one graph; heartbeats keep"
+        + " the store", ApiTests::sourcesNeverMix);
+    r.check("addendum 1: scanner validity: a derived cross dies with its USD leg",
+        ApiTests::scannerValidity);
 
     r.section("api: HTTP server (real sockets, ephemeral port)");
     r.check("both endpoints answer; status JSON has every documented field", ApiTests::serverHappy);
@@ -375,6 +383,99 @@ final class ApiTests {
         : TestRunner.Result.fail("live after replay still flagged");
   }
 
+  private static final double CROSS = 1.08 / 1.30; // EUR/GBP implied by the two USD legs
+
+  private static TestRunner.Result staleEdgesLeaveScan() throws Exception {
+    Harness h = new Harness();
+    h.ticks("OANDA:EUR_USD", 1.08, "OANDA:GBP_USD", 1.30, "OANDA:EUR_GBP", CROSS * 1.004,
+        "OANDA:USD_JPY", 156.0);
+    if (!Boolean.TRUE.equals(h.status().get("lastScanFoundCycle"))) {
+      return TestRunner.Result.fail("no cycle at the start");
+    }
+    for (int i = 0; i < 20; i++) h.advance(1_000);
+    h.ticks("OANDA:USD_JPY", 156.1); // only JPY stays fresh
+    for (int i = 0; i < 10; i++) h.advance(1_000); // exactly 30 s for the others
+    Map<String, Object> at30 = h.status();
+    h.advance(1_000); // the next sweep finds them expired and re-scans
+    Map<String, Object> st = h.status();
+    Map<?, ?> scan = (Map<?, ?>) st.get("lastScan");
+    // 4 direct pairs = 8 edges; EUR-JPY and GBP-JPY derived = 4 edges (EUR/GBP is direct);
+    // only USD<->JPY stays usable, so 10 of the 12 are excluded
+    if (!Boolean.TRUE.equals(at30.get("lastScanFoundCycle")) || !at30.get("excludedEdges").equals(0)) {
+      return TestRunner.Result.fail("at exactly 30 s: " + at30);
+    }
+    if (Boolean.TRUE.equals(st.get("lastScanFoundCycle")) || !scan.get("edges").equals(2)
+        || !st.get("excludedEdges").equals(10)) {
+      return TestRunner.Result.fail("after 30 s: " + st);
+    }
+    return TestRunner.Result.pass("after 30 s: 2 usable edges, 10 excluded, no cycle");
+  }
+
+  private static TestRunner.Result deadFeedAlertEnds() throws Exception {
+    Harness h = new Harness();
+    h.ticks("OANDA:EUR_USD", 1.08, "OANDA:GBP_USD", 1.30, "OANDA:EUR_GBP", CROSS * 1.004);
+    long scans = h.market.scanCount();
+    if (!Boolean.TRUE.equals(h.status().get("lastScanFoundCycle"))) {
+      return TestRunner.Result.fail("no cycle at the start");
+    }
+    for (int s = 0; s < 29; s++) h.advance(1_000); // quiet: the sweep does not re-scan
+    if (h.market.scanCount() != scans || !Boolean.TRUE.equals(h.status().get("lastScanFoundCycle"))) {
+      return TestRunner.Result.fail("re-scanned before anything expired");
+    }
+    for (int s = 0; s < 3; s++) h.advance(1_000); // the feed is dead: nothing arrives
+    Map<String, Object> st = h.status();
+    if (Boolean.TRUE.equals(st.get("lastScanFoundCycle")) || h.market.scanCount() != scans + 1) {
+      return TestRunner.Result.fail("alert survived a dead feed: " + st);
+    }
+    return TestRunner.Result.pass("one sweep re-scan, ~1 s after the quotes expired");
+  }
+
+  private static TestRunner.Result sourcesNeverMix() throws Exception {
+    Harness h = new Harness();
+    ArbitrageScanner s = h.scanner;
+    int eur = s.currencyId("EUR");
+    int gbp = s.currencyId("GBP");
+    // live: a consistent graph including a direct EUR/GBP quote
+    h.ticks("OANDA:EUR_USD", 1.08, "OANDA:GBP_USD", 1.30, "OANDA:EUR_GBP", CROSS);
+    // fallback snapshot whose USD legs would make the old live EUR/GBP quote a +0.4% cycle
+    h.market.ingest(Json.parse("{\"source\":\"frankfurter-fallback\",\"base\":\"USD\","
+        + "\"rates\":{\"EUR\":" + (1 / 1.08) + ",\"GBP\":" + (1 / (1.30 * 1.004)) + "}}"));
+    Map<String, Object> st = h.status();
+    if (Boolean.TRUE.equals(st.get("lastScanFoundCycle")) || s.isDirect(eur, gbp)
+        || !st.get("sourceSwitches").equals(1L) || !"frankfurter-fallback".equals(st.get("ratesSource"))) {
+      return TestRunner.Result.fail("live and fallback mixed: " + st);
+    }
+    h.ticks(); // a heartbeat brings no rates: the fallback store stays
+    if (!(s.rate(eur, gbp) > 0) || !"frankfurter-fallback".equals(h.status().get("ratesSource"))) {
+      return TestRunner.Result.fail("heartbeat cleared the store");
+    }
+    h.ticks("OANDA:USD_JPY", 156.0); // live again: fallback rates gone
+    st = h.status();
+    if (s.rate(eur, gbp) > 0 || !st.get("pairsSeen").equals(1) || !st.get("sourceSwitches").equals(2L)) {
+      return TestRunner.Result.fail("fallback rates survived the switch back: " + st);
+    }
+    return TestRunner.Result.pass("2 switches, store cleared each time");
+  }
+
+  private static TestRunner.Result scannerValidity() {
+    ArbitrageScanner s = new ArbitrageScanner(new Directory(), 0.001);
+    int usd = s.currencyId("USD");
+    int eur = s.currencyId("EUR");
+    int gbp = s.currencyId("GBP");
+    s.onTick(eur, usd, 1.08, 1_000);
+    s.onTick(gbp, usd, 1.30, 2_000);
+    s.onTick(eur, gbp, CROSS * 1.004, 5_000);
+    boolean ok = s.usable(eur, usd, 1_000) && !s.usable(eur, usd, 1_001)
+        && s.usable(usd, eur, 1_000) && s.usable(eur, gbp, 3_000)
+        && s.scan(500).hasArbitrage() && !s.scan(1_500).hasArbitrage()
+        && s.scan(1_500).excludedEdges() == 2 && s.scan(2_500).excludedEdges() == 4
+        && s.scan(2_500).edges() == 2 && s.nextExpiryAfter(0) == 1_001
+        && s.nextExpiryAfter(1_500) == 2_001 && s.scan().hasArbitrage();
+    s.clear();
+    ok &= !(s.rate(eur, gbp) > 0) && s.scan(0).edges() == 0 && s.scan(0).excludedEdges() == 0;
+    return ok ? TestRunner.Result.pass(null) : TestRunner.Result.fail("validity rules");
+  }
+
   // ---------------------------------------------------------------- HTTP
 
   private interface ServerBody {
@@ -421,7 +522,8 @@ final class ApiTests {
       Map<?, ?> m = (Map<?, ?>) Json.parse(st.body());
       List<String> keys = List.of("state", "source", "replay", "connected", "lastTickAt",
           "lastPayloadAt", "tickCount", "rejectedTicks", "payloads", "pairsSeen", "staleSymbols",
-          "fallbackAsOf", "scanCount", "lastScanAt", "lastScanFoundCycle", "lastScan");
+          "fallbackAsOf", "scanCount", "lastScanAt", "lastScanFoundCycle", "excludedEdges",
+          "minProfitPercent", "ratesSource", "sourceSwitches", "lastScan");
       if (!new ArrayList<>(m.keySet()).equals(keys) || !m.get("tickCount").equals(2L)) {
         return TestRunner.Result.fail(st.body());
       }

@@ -322,7 +322,11 @@ final class ServiceTests {
       { 0.89238, 0.75641, 158.25, 1.4324, 1.4226, 0.83107, 96.73 };
 
   private static ArbitrageScanner snapshot(Directory d) {
-    ArbitrageScanner s = new ArbitrageScanner(d);
+    return snapshot(d, ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT);
+  }
+
+  private static ArbitrageScanner snapshot(Directory d, double minProfitPercent) {
+    ArbitrageScanner s = new ArbitrageScanner(d, minProfitPercent);
     for (int i = 0; i < SNAP_CCY.length; i++) s.onTick("USD/" + SNAP_CCY[i], SNAP_RATE[i]);
     return s;
   }
@@ -404,9 +408,9 @@ final class ServiceTests {
     Directory d = new Directory();
     int eur = d.currencyId("EUR");
     int gbp = d.currencyId("GBP");
-    ArbitrageScanner below = snapshot(d);
+    ArbitrageScanner below = snapshot(d, 0.001); // the threshold's own semantics, at 0.001%
     below.onTick("EUR/GBP", below.rate(eur, gbp) * 1.000005); // +0.0005%
-    ArbitrageScanner above = snapshot(d);
+    ArbitrageScanner above = snapshot(d, 0.001);
     above.onTick("EUR/GBP", above.rate(eur, gbp) * 1.00002); // +0.002%
     ScanResult rb = below.scan();
     ScanResult ra = above.scan();

@@ -9,15 +9,17 @@ public final class ScanResult {
   final double multiplier;
   final double profitPercent;
   final int edges;
+  final int excludedEdges;
   final boolean belowThreshold;
 
   ScanResult(boolean hasArbitrage, String[] cycle, double multiplier, double profitPercent,
-      int edges, boolean belowThreshold) {
+      int edges, int excludedEdges, boolean belowThreshold) {
     this.hasArbitrage = hasArbitrage;
     this.cycle = cycle == null ? NONE : cycle;
     this.multiplier = multiplier;
     this.profitPercent = profitPercent;
     this.edges = edges;
+    this.excludedEdges = excludedEdges;
     this.belowThreshold = belowThreshold;
   }
 
@@ -43,6 +45,11 @@ public final class ScanResult {
   /** Directed edges (known rates) in the graph that was scanned. */
   public int edges() {
     return edges;
+  }
+
+  /** Known rates left out of the scan because they (or a USD leg they derive from) were stale. */
+  public int excludedEdges() {
+    return excludedEdges;
   }
 
   /** True if a negative cycle was found but its profit was under the minimum threshold. */

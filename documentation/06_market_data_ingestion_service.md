@@ -73,7 +73,9 @@ Pick a fixed roster of currencies for the demo graph, e.g.: `USD, EUR, GBP, JPY,
 
 Not every cross-pair in an 8-currency complete graph is directly streamed by Finnhub. For pairs without a direct feed, derive the rate from two direct-quoted legs through USD (`R(a,b) = R(USD,b) / R(USD,a)`), same approach as the previous Frankfurter-based design — except now the *inputs* to that derivation are live ticks instead of a daily snapshot, so the derived cross-rate is live too.
 
-> **Status: partially verified.** We confirmed `/forex/symbol?exchange=oanda` is a free, working endpoint that returns the exact symbol strings (`OANDA:EUR_USD` format). What's still outstanding is calling it with a live key to get the *actual* list of OANDA pairs it returns, so the 8-currency roster can be finalized against real coverage rather than assumption. This is a 15-minute task once the (regenerated) API key is in hand — call `/forex/symbol?exchange=oanda&token=$FINNHUB_API_KEY` and check which of the 56 pairs in an 8-currency complete graph come back directly vs. need USD-derivation.
+> **Status: verified (2026-10-23).** `feed/feed.py --discover` called `/forex/symbol?exchange=oanda` once with a live key and recorded the result in `feed/symbols.json`. OANDA lists 120 symbols. Of the 28 currency pairs in the 8-currency roster, **21 are streamed directly**: every pair among USD, EUR, GBP, JPY, AUD, CAD and CHF. **OANDA has no INR pair at all**, not even USD/INR, so the 7 INR pairs cannot be streamed or derived through USD.
+>
+> **Consequence: INR is fallback-only.** In live mode the scanner's graph has **7 currencies and 21 pairs (42 directed edges)**. INR appears only while the Frankfurter fallback snapshot is the source, because that snapshot quotes every roster currency against USD. Order trading is unaffected: the Directory still lists the INR pairs, and the matching engine trades them like any other pair. Only the arbitrage graph lacks a live INR rate.
 
 ---
 
@@ -84,10 +86,23 @@ Not every cross-pair in an 8-currency complete graph is directly streamed by Fin
 | `FINNHUB_API_KEY` | *(env var, required)* | Auth token for the Finnhub WebSocket (and the one-time build-time discovery REST calls). The Frankfurter fallback is keyless and does not use it |
 | `SUBSCRIBE_SYMBOLS` | the ~12-16 direct pairs from §4 | Sent as `{"type":"subscribe","symbol":"OANDA:EUR_USD"}` per symbol on connect |
 | `SCAN_THROTTLE_MS` | `500` | Minimum gap between consecutive Bellman-Ford scans, even under a tick burst |
+| `MIN_PROFIT_PERCENT` | `0.02` | Smallest cycle profit reported as arbitrage. Set it with `serve --min-profit` or the environment variable. The default is data-driven: see the table below |
 | `RECONNECT_BACKOFF_MS` | `1000, 2000, 4000, 8000, 10000 (cap)` | WebSocket reconnect delay sequence on disconnect |
 | `REST_FALLBACK_TRIGGER_MS` | `15000` | How long the WebSocket must stay disconnected before the Frankfurter fallback activates (avoid flapping to the fallback on a brief reconnect blip) |
 | `REST_FALLBACK_POLL_MS` | `3,600,000` (1 hr) | Poll interval for the Frankfurter fallback — it's a daily-snapshot API, so polling it faster than hourly gains nothing |
 | `STALE_AFTER_MS` | `30000` | If no tick (WebSocket) updates a given pair within this window and the Frankfurter fallback hasn't activated yet, mark it `stale` on the dashboard |
+
+**Choosing the profit threshold.** Finnhub's OANDA ticks alternate between bid and ask, so cycles of about 0.01% appear constantly in real data and cannot be traded. Replaying the committed capture (`feed/samples/finnhub_ticks_2026-10-23.jsonl`: 3,690 ticks over 299 s, 432 scans throttled to 500 ms, each quote usable for 30 s) through `backend/run.sh threshold-study` gives:
+
+| Threshold | Scans where the scanner reports a cycle | Scans where some cycle reaches it (exhaustive search) |
+| :-: | :-: | :-: |
+| 0.001% | 429 / 432 (99.31%) | 429 / 432 (99.31%) |
+| 0.005% | 427 / 432 (98.84%) | 427 / 432 (98.84%) |
+| 0.010% | 58 / 432 (13.43%) | 286 / 432 (66.20%) |
+| 0.020% | 0 / 432 (0.00%) | 0 / 432 (0.00%) |
+| 0.050% | 0 / 432 (0.00%) | 0 / 432 (0.00%) |
+
+Best-cycle profit per scan, exhaustive: p50 0.01070%, p90 0.01314%, p99 0.01562%, max 0.01652%. The default is the smallest candidate for which fewer than 1% of scans report a cycle: **0.02%**. At 0.010% the scanner reports far fewer scans than actually contain a qualifying cycle. That is the Bellman-Ford detection gap documented in `backend/BUGS.md` B4 and B8. It does not affect the 0.02% default, because no real cycle reached 0.02%.
 
 ---
 

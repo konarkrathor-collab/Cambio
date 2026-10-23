@@ -12,13 +12,18 @@ speed="${2:-20}"
 ../backend/build.sh >/dev/null
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
 base="http://127.0.0.1:${port}"
-log="$(mktemp)"
+log="$(mktemp "${TMPDIR:-/tmp}/ads-replay.XXXXXX")"
 ../backend/run.sh serve --port "$port" >"$log" 2>&1 &
 backend=$!
 trap 'kill "$backend" 2>/dev/null || true; wait "$backend" 2>/dev/null || true; rm -f "$log"' EXIT
 
-for _ in $(seq 1 50); do
-  curl -sf "$base/api/market/rates/status" >/dev/null 2>&1 && break
+tries=0
+until curl -sf --max-time 2 "$base/api/market/rates/status" >/dev/null 2>&1; do
+  tries=$((tries + 1))
+  if [ "$tries" -gt 50 ]; then
+    echo "backend did not start" >&2
+    exit 1
+  fi
   sleep 0.2
 done
 echo "backend: $(grep -m1 listening "$log")"
@@ -56,8 +61,18 @@ for body in '{not json' '' '[1,2,3]' '{"source":"finnhub-ws","ticks":"x"}' \
 done
 printf '  POST (2 MB of junk) -> %s\n' "$(head -c 2097152 /dev/urandom | curl -s -o /dev/null \
   -w '%{http_code}' -X POST --data-binary @- "$base/api/market/rates")"
-printf '  raw bytes on the socket -> %s\n' \
-  "$(printf '\x00\x01\x02 junk\r\n\r\n' | (exec 3<>"/dev/tcp/127.0.0.1/$port"; cat >&3; timeout 2 cat <&3 >/dev/null; echo sent) 2>&1 || true)"
+printf '  raw bytes on the socket -> %s\n' "$(python3 - "$port" <<'PY'
+import socket, sys
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=2)
+s.sendall(b"\x00\x01\x02 junk\r\n\r\n")
+try:
+    s.recv(4096)
+except OSError:
+    pass
+s.close()
+print("sent")
+PY
+)"
 code="$(curl -s -o /dev/null -w '%{http_code}' "$base/api/market/rates/status")"
 if [ "$code" = "200" ]; then
   echo "PASS  backend still answering after garbage (status $code)"

@@ -14,6 +14,12 @@ import ads.directory.Directory;
  * (doc 06 §4); a direct rate is never overwritten by a derived one. Unknown rates are NaN
  * and simply have no edge.
  *
+ * <p><b>Validity.</b> Every direct quote carries the instant until which it may be used
+ * (the market service gives live ticks 30 s, a fallback snapshot 2 h). {@link #scan(long)}
+ * leaves out expired quotes and every cross derived from one, so a feed that stops makes
+ * alerts stop instead of freezing them; {@link #clear()} empties the store when the source
+ * switches so live and snapshot rates never meet in one graph.
+ *
  * <p><b>Scan.</b> Edge {@code u->v} has weight {@code -ln(rate)}, so a negative cycle is a
  * loop whose rates multiply to more than 1. A cycle counts as arbitrage only if its exact
  * multiplier (the product of its rates) reaches {@code 1 + threshold} (default 0.001%), so
@@ -41,14 +47,21 @@ import ads.directory.Directory;
  * matched in the scanner.
  */
 public final class ArbitrageScanner {
-  /** Minimum profit, in percent, for a cycle to count as arbitrage (doc 08: 0.001%). */
-  public static final double DEFAULT_MIN_PROFIT_PERCENT = 0.001;
+  /**
+   * Minimum profit, in percent, for a cycle to count as arbitrage. Data-driven (doc 08 Stage
+   * 2 addendum, item 3): replaying the real capture feed/samples/finnhub_ticks_2026-10-23.jsonl
+   * ({@code run.sh threshold-study}), 0.001% and 0.005% report a cycle in ~99% of scans
+   * (ticks alternate between bid and ask), 0.01% in 13%, and 0.02% in none; 0.02% is the
+   * smallest candidate under 1%. Configurable per server ({@code serve --min-profit}).
+   */
+  public static final double DEFAULT_MIN_PROFIT_PERCENT = 0.02;
 
   private final String[] currencies;
   private final int n;
   private final int usd;
   private final double[][] rate;
   private final boolean[][] direct;
+  private final long[][] validUntil; // direct quotes: last instant (ms) the quote may be used
   private final double minProfitPercent;
   private final BellmanFord bf = new BellmanFord();
 
@@ -79,6 +92,7 @@ public final class ArbitrageScanner {
     }
     this.rate = new double[n][n];
     this.direct = new boolean[n][n];
+    this.validUntil = new long[n][n];
     this.minProfitPercent = minProfitPercent;
     for (int i = 0; i < n; i++) {
       for (int j = 0; j < n; j++) rate[i][j] = Double.NaN;
@@ -87,16 +101,32 @@ public final class ArbitrageScanner {
 
   /** Applies a tick for "BASE/QUOTE" ({@code 1 BASE = price QUOTE}); false if unknown pair. */
   public boolean onTick(String pair, double price) {
+    return onTick(pair, price, Long.MAX_VALUE);
+  }
+
+  /**
+   * Applies a tick for "BASE/QUOTE" that may be used until {@code validUntilMs} (inclusive);
+   * false if the pair is not in this scanner's universe.
+   */
+  public boolean onTick(String pair, double price, long validUntilMs) {
     if (pair == null || pair.length() != 7 || pair.charAt(3) != '/') return false;
     int base = currencyId(pair.substring(0, 3));
     int quote = currencyId(pair.substring(4));
     if (base < 0 || quote < 0 || base == quote) return false;
-    onTick(base, quote, price);
+    onTick(base, quote, price, validUntilMs);
     return true;
   }
 
-  /** Applies a tick: {@code 1 base = price quote}, and the reciprocal for the reverse. */
+  /** Applies a tick that never expires: {@code 1 base = price quote}, and the reverse. */
   public void onTick(int base, int quote, double price) {
+    onTick(base, quote, price, Long.MAX_VALUE);
+  }
+
+  /**
+   * Applies a tick: {@code 1 base = price quote}, and the reciprocal for the reverse; both
+   * directions may be used until {@code validUntilMs} (inclusive).
+   */
+  public void onTick(int base, int quote, double price, long validUntilMs) {
     if (base == quote || base < 0 || quote < 0 || base >= n || quote >= n) {
       throw new IllegalArgumentException("bad currency pair " + base + "/" + quote);
     }
@@ -107,7 +137,44 @@ public final class ArbitrageScanner {
     rate[quote][base] = 1.0 / price;
     direct[base][quote] = true;
     direct[quote][base] = true;
+    validUntil[base][quote] = validUntilMs;
+    validUntil[quote][base] = validUntilMs;
     deriveCrosses();
+  }
+
+  /** Forgets every rate (used when the feed switches source, so sources never mix). */
+  public void clear() {
+    for (int a = 0; a < n; a++) {
+      for (int b = 0; b < n; b++) {
+        rate[a][b] = Double.NaN;
+        direct[a][b] = false;
+        validUntil[a][b] = 0;
+      }
+    }
+  }
+
+  /**
+   * True if the rate {@code from -> to} is known and may be used at {@code nowMs}: a direct
+   * quote until its own validity ends, a derived cross only while both USD legs it was
+   * derived from are usable.
+   */
+  public boolean usable(int from, int to, long nowMs) {
+    if (from == to || !(rate[from][to] > 0)) return false;
+    if (direct[from][to]) return nowMs <= validUntil[from][to];
+    return nowMs <= validUntil[usd][from] && nowMs <= validUntil[usd][to];
+  }
+
+  /** The earliest instant after {@code nowMs} at which some direct quote stops being usable. */
+  public long nextExpiryAfter(long nowMs) {
+    long next = Long.MAX_VALUE;
+    for (int a = 0; a < n; a++) {
+      for (int b = 0; b < n; b++) {
+        if (direct[a][b] && validUntil[a][b] >= nowMs && validUntil[a][b] < next) {
+          next = validUntil[a][b];
+        }
+      }
+    }
+    return next == Long.MAX_VALUE ? Long.MAX_VALUE : next + 1;
   }
 
   /** Recomputes every non-direct rate from the two USD legs, or NaN if a leg is missing. */
@@ -156,12 +223,23 @@ public final class ArbitrageScanner {
     return minProfitPercent;
   }
 
-  /** Builds the graph from every known rate and looks for a profitable cycle. */
+  /** Scans with every known rate, ignoring validity (quotes that never expire). */
   public ScanResult scan() {
+    return scan(Long.MIN_VALUE);
+  }
+
+  /**
+   * Builds the graph from every rate usable at {@code nowMs} and looks for a profitable
+   * cycle; known-but-stale rates are left out and counted in {@link ScanResult#excludedEdges}.
+   */
+  public ScanResult scan(long nowMs) {
     int edges = 0;
+    int excluded = 0;
     for (int a = 0; a < n; a++) {
       for (int b = 0; b < n; b++) {
-        if (a != b && rate[a][b] > 0) edges++;
+        if (a == b || !(rate[a][b] > 0)) continue;
+        if (usable(a, b, nowMs)) edges++;
+        else excluded++;
       }
     }
     int[] from = new int[edges];
@@ -170,7 +248,7 @@ public final class ArbitrageScanner {
     int e = 0;
     for (int a = 0; a < n; a++) {
       for (int b = 0; b < n; b++) {
-        if (a != b && rate[a][b] > 0) {
+        if (a != b && rate[a][b] > 0 && usable(a, b, nowMs)) {
           from[e] = a;
           to[e] = b;
           base[e] = -Math.log(rate[a][b]);
@@ -183,7 +261,7 @@ public final class ArbitrageScanner {
     // no-arbitrage case costs one Bellman-Ford run instead of V.
     bf.build(n, from, to, base);
     if (!bf.hasNegativeCycle()) {
-      return new ScanResult(false, null, 1.0, 0.0, edges, false);
+      return new ScanResult(false, null, 1.0, 0.0, edges, excluded, false);
     }
     double gain = Math.log1p(minProfitPercent / 100.0);
     double[] weight = new double[edges];
@@ -209,11 +287,11 @@ public final class ArbitrageScanner {
       }
     }
     if (best == null) {
-      return new ScanResult(false, null, 1.0, 0.0, edges, sawBelow);
+      return new ScanResult(false, null, 1.0, 0.0, edges, excluded, sawBelow);
     }
     String[] names = new String[best.length];
     for (int i = 0; i < best.length; i++) names[i] = currencies[best[i]];
     return new ScanResult(true, names, bestMultiplier, (bestMultiplier - 1.0) * 100.0, edges,
-        false);
+        excluded, false);
   }
 }

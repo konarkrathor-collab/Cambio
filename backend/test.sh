@@ -33,7 +33,7 @@ else
 fi
 # an order's remaining quantity may only be written by PriceLevel.fill (and set once by
 # the Order constructor)
-if grep -rnE "\.remaining\s*([-+*/]?=[^=]|\+\+|--)|(\+\+|--)\s*[A-Za-z_.]*\.remaining" src \
+if grep -rnE "\.remaining[[:space:]]*([-+*/]?=[^=]|\+\+|--)|(\+\+|--)[[:space:]]*[A-Za-z_.]*\.remaining" src \
     | grep -v "^src/ads/engine/PriceLevel.java:" | grep -v "this.remaining = quantity;"; then
   echo "FAIL  Order.remaining written outside PriceLevel.fill"
   rules_failed=1

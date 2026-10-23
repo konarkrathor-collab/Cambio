@@ -38,9 +38,12 @@ import java.util.concurrent.CountDownLatch;
  *   run.sh archive [DIR]         decode a Logbook archive and summarise it
  *                                (default data/logbook)
  *   run.sh structures            Stage 0 smoke run of the six structures
- *   run.sh serve [--port N] [--host H]
+ *   run.sh serve [--port N] [--host H] [--min-profit PERCENT]
  *                                Stage 2 HTTP server (default 127.0.0.1:8080):
- *                                POST /api/market/rates, GET /api/market/rates/status
+ *                                POST /api/market/rates, GET /api/market/rates/status;
+ *                                the threshold also reads MIN_PROFIT_PERCENT
+ *   run.sh threshold-study [FILE]
+ *                                replay a capture offline and tabulate thresholds
  * </pre>
  */
 public final class Main {
@@ -67,6 +70,9 @@ public final class Main {
       case "serve":
         serve(args);
         break;
+      case "threshold-study":
+        ThresholdStudy.run(Paths.get(args.length > 1 ? args[1] : ThresholdStudy.DEFAULT_CAPTURE));
+        break;
       default:
         usage();
     }
@@ -74,7 +80,8 @@ public final class Main {
 
   private static void usage() {
     System.err.println("usage: run.sh demo [--all-trades] | accounts [FILE] | archive [DIR]"
-        + " | structures | serve [--port N] [--host H]");
+        + " | structures | serve [--port N] [--host H] [--min-profit PERCENT]"
+        + " | threshold-study [FILE]");
     System.exit(2);
   }
 
@@ -82,8 +89,11 @@ public final class Main {
   private static void serve(String[] args) throws IOException {
     String host = "127.0.0.1";
     int port = 8080;
+    double minProfit = minProfitFromEnv();
     for (int i = 1; i < args.length; i++) {
-      if (args[i].equals("--port") && i + 1 < args.length) {
+      if (args[i].equals("--min-profit") && i + 1 < args.length) {
+        minProfit = parseMinProfit(args[++i], "--min-profit");
+      } else if (args[i].equals("--port") && i + 1 < args.length) {
         port = Integer.parseInt(args[++i]);
       } else if (args[i].equals("--host") && i + 1 < args.length) {
         host = args[++i];
@@ -92,8 +102,8 @@ public final class Main {
       }
     }
     EngineThread engine = new EngineThread();
-    MarketService market = new MarketService(new ArbitrageScanner(new Directory()), engine,
-        System::currentTimeMillis);
+    MarketService market = new MarketService(new ArbitrageScanner(new Directory(), minProfit),
+        engine, System::currentTimeMillis);
     ApiServer server = new ApiServer(new InetSocketAddress(host, port));
     ApiServer.marketRoutes(server, engine, market);
     server.start();
@@ -110,6 +120,25 @@ public final class Main {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+  }
+
+  /** MIN_PROFIT_PERCENT from the environment, or the scanner's data-driven default. */
+  static double minProfitFromEnv() {
+    String env = System.getenv("MIN_PROFIT_PERCENT");
+    return env == null || env.isBlank() ? ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT
+        : parseMinProfit(env, "MIN_PROFIT_PERCENT");
+  }
+
+  static double parseMinProfit(String text, String what) {
+    try {
+      double v = Double.parseDouble(text.trim());
+      if (v >= 0 && v < 100) return v;
+    } catch (NumberFormatException e) {
+      // reported below
+    }
+    System.err.println(what + " must be a percentage in [0, 100), got: " + text);
+    System.exit(2);
+    return 0;
   }
 
   /** Loads the accounts file through a fresh Vault (the restart path) and prints it. */

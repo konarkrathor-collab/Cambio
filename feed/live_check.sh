@@ -20,8 +20,13 @@ base="http://127.0.0.1:${port}"
 ../backend/run.sh serve --port "$port" >/dev/null 2>&1 &
 backend=$!
 trap 'kill "$backend" 2>/dev/null || true; wait "$backend" 2>/dev/null || true' EXIT
-for _ in $(seq 1 50); do
-  curl -sf "$base/api/market/rates/status" >/dev/null 2>&1 && break
+tries=0
+until curl -sf --max-time 2 "$base/api/market/rates/status" >/dev/null 2>&1; do
+  tries=$((tries + 1))
+  if [ "$tries" -gt 50 ]; then
+    echo "backend did not start" >&2
+    exit 1
+  fi
   sleep 0.2
 done
 
