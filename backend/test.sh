@@ -17,11 +17,13 @@ cd "$(dirname "$0")"
 # doc 08 §3 source rules, checked on every run
 echo "== source rules (doc 08 §3) =="
 rules_failed=0
-if grep -rn "java\.util" src; then
-  echo "FAIL  java.util appears under src/ (structures and matching path must not use it)"
+# structures and the matching path: no java.util (the api/util layers may use it, rule 7)
+structure_dirs="src/ads/engine src/ads/scanner src/ads/vault src/ads/directory src/ads/logbook"
+if grep -rn "java\.util" $structure_dirs; then
+  echo "FAIL  java.util in a structure or matching-path package"
   rules_failed=1
 else
-  echo "PASS  no java.util anywhere under src/"
+  echo "PASS  no java.util in engine, scanner, vault, directory, logbook"
 fi
 if grep -rnwE "double|float|Double|Float" src/ads/engine; then
   echo "FAIL  floating point in src/ads/engine (orders are priced and matched in integers)"

@@ -85,9 +85,57 @@ The cost is V+1 Bellman-Ford runs, about 17,000 edge relaxations on the 12-curre
 
 ---
 
-## Note for review (not a bug): Appendix A lets cash go negative
+## B5: The Frankfurter fallback could never activate: its CDN rejects Python's default User-Agent (Stage 2)
 
-Implemented as written, Appendix A checks margin per order against the account as it is at that moment, and nothing is reserved for resting orders. A market order is checked only at the best opposite tick, even if it then sweeps deeper. So a trader with cash 1,000 can rest two buys of 10 × 100. Each passes on its own, both fill, and cash ends at −1,000. The engine does not improvise a reservation. The Vault accepts negative cash when loading (it rejects only a negative `marginLimit`), and the scenario test `Appendix A reserves no cash…` pins the behaviour down. If you want reservations, it's a change to Appendix A.
+**What broke.** In the first live outage drill, run by `feed/live_check.sh` with the socket pointed at a dead local port, the feed reached the 15 s trigger and then got a 403:
+
+```
+WARNING Frankfurter fallback unavailable (HTTPError: HTTP Error 403: Forbidden); keeping last rates
+```
+
+The same URL returned 200 from `curl`. Checking by User-Agent showed the cause:
+
+```
+Python-urllib/3.13 -> 403
+curl/8.5.0 -> 200
+ads-feed/1.0 (+https://github.com/lifeknife10A/order-matching-arbitrage-detector) -> 200
+```
+
+**Why.** `urllib` sends `Python-urllib/x.y` unless told otherwise, and Frankfurter's CDN blocks that agent. The unit tests could not see it because they mock the fetch. Only a request to the real service exposes it.
+
+**Fix.** Every request the feed makes (Frankfurter, Finnhub discovery and the backend POST) now sends `User-Agent: ads-feed/1.0 (+repo URL)`. A unit test pins that the fallback fetch never uses the default agent. The rerun drill switched to `frankfurter-fallback` at 15.0 s and back to `finnhub-ws` on reconnect.
+
+---
+
+## B6: A deeply nested message would have crashed the feed (Stage 2, caught before commit)
+
+**What broke.** `parse_message` caught `ValueError` and `TypeError` from `json.loads`. On `"[" * 100000`, Python's `json` raises `RecursionError` instead, which would have escaped the listener loop and killed the process. That is exactly the "never crash on bad input" rule.
+
+**Fix.** `RecursionError` is caught alongside the others, and the message is counted as malformed and skipped. The input is now in the malformed-message test, which also covers non-JSON, wrong types, NaN/Infinity, negative or zero prices, non-integer timestamps, empty symbols and binary junk.
+
+---
+
+## B7: A client hanging up mid-body was answered as a 500 with a stack trace (Stage 2, caught before commit)
+
+**What broke.** The server garbage test sends a `Content-Length: 500` header with only 4 bytes of body. Reading the body threw `IOException`, which fell through to the generic handler: a 500 `INTERNAL` response and a full WARNING stack trace in the log.
+
+**Fix.** A body that ends early is now a client error, `400 INCOMPLETE_BODY`, with no trace. The server keeps serving, and the garbage test checks that it still answers afterwards.
+
+---
+
+## Note for review (not a bug): real OANDA ticks show "arbitrage" above 0.001% almost all the time
+
+The first live capture, replayed through the backend, reports cycles such as `CHF -> USD -> CAD -> CHF` at +0.0056%. These are not bugs in the scanner. The cycle is real in the ticked numbers:
+- Finnhub's OANDA ticks are single prices with no bid/ask spread.
+- Each leg's tick arrives at a slightly different moment.
+
+The doc 08 threshold of 0.001% is below a typical retail FX spread (about 0.005–0.02% per leg), so these cycles could not be traded. I have left the threshold as specified. Whether the dashboard should use a higher threshold for live data, or show it next to the spread, is a product decision.
+
+---
+
+## Note (not a bug): Appendix A lets cash go negative. Accepted in doc 08 at 6462f32
+
+Implemented as written, Appendix A checks margin per order against the account as it is at that moment, and nothing is reserved for resting orders. A market order is checked only at the best opposite tick, even if it then sweeps deeper. So a trader with cash 1,000 can rest two buys of 10 × 100. Each passes on its own, both fill, and cash ends at −1,000. The engine does not improvise a reservation. The Vault accepts negative cash when loading (it rejects only a negative `marginLimit`), and the scenario test `Appendix A reserves no cash…` pins the behaviour down. Doc 08 Appendix A now records this as a known simplification.
 
 ---
 

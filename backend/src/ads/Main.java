@@ -1,5 +1,9 @@
 package ads;
 
+import ads.api.ApiServer;
+import ads.api.EngineThread;
+import ads.api.MarketService;
+import ads.directory.Directory;
 import ads.directory.TickerTrie;
 import ads.engine.BPlusTreeLadder;
 import ads.engine.Order;
@@ -9,16 +13,19 @@ import ads.engine.PriceLevel;
 import ads.engine.Side;
 import ads.logbook.HuffmanCodec;
 import ads.logbook.Logbook;
+import ads.scanner.ArbitrageScanner;
 import ads.scanner.BellmanFord;
 import ads.vault.Account;
 import ads.vault.LruCache;
 import ads.vault.Vault;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * Backend entry point (documentation/08_build_plan_and_acceptance.md).
@@ -31,6 +38,9 @@ import java.nio.file.Paths;
  *   run.sh archive [DIR]         decode a Logbook archive and summarise it
  *                                (default data/logbook)
  *   run.sh structures            Stage 0 smoke run of the six structures
+ *   run.sh serve [--port N] [--host H]
+ *                                Stage 2 HTTP server (default 127.0.0.1:8080):
+ *                                POST /api/market/rates, GET /api/market/rates/status
  * </pre>
  */
 public final class Main {
@@ -54,6 +64,9 @@ public final class Main {
       case "structures":
         structures();
         break;
+      case "serve":
+        serve(args);
+        break;
       default:
         usage();
     }
@@ -61,8 +74,42 @@ public final class Main {
 
   private static void usage() {
     System.err.println("usage: run.sh demo [--all-trades] | accounts [FILE] | archive [DIR]"
-        + " | structures");
+        + " | structures | serve [--port N] [--host H]");
     System.exit(2);
+  }
+
+  /** Starts the HTTP server and blocks until the process is stopped. */
+  private static void serve(String[] args) throws IOException {
+    String host = "127.0.0.1";
+    int port = 8080;
+    for (int i = 1; i < args.length; i++) {
+      if (args[i].equals("--port") && i + 1 < args.length) {
+        port = Integer.parseInt(args[++i]);
+      } else if (args[i].equals("--host") && i + 1 < args.length) {
+        host = args[++i];
+      } else {
+        usage();
+      }
+    }
+    EngineThread engine = new EngineThread();
+    MarketService market = new MarketService(new ArbitrageScanner(new Directory()), engine,
+        System::currentTimeMillis);
+    ApiServer server = new ApiServer(new InetSocketAddress(host, port));
+    ApiServer.marketRoutes(server, engine, market);
+    server.start();
+    System.out.println("listening on http://" + host + ":" + server.port()
+        + "  (POST /api/market/rates, GET /api/market/rates/status)");
+    CountDownLatch stopped = new CountDownLatch(1);
+    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+      server.stop();
+      engine.shutdown();
+      stopped.countDown();
+    }));
+    try {
+      stopped.await();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   /** Loads the accounts file through a fresh Vault (the restart path) and prints it. */

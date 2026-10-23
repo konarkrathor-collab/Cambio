@@ -81,6 +81,7 @@ public final class TestRunner {
     UnitTests.run(r);
     EngineTests.run(r);
     ServiceTests.run(r);
+    ApiTests.run(r);
     System.out.println();
     System.out.println("RESULT: " + r.passed + " passed, " + r.failed + " failed");
     if (r.failed > 0) {
