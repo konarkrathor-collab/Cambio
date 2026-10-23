@@ -6,18 +6,18 @@ This document turns the validated data structure choices (doc 05) and system arc
 
 ## 1. Status: the data structure question is closed
 
-Every pick below was benchmarked from scratch against every realistic alternative (see `benchmark/results/RESULTS.md`, Runs 1–11, and doc 05's "Benchmark Evidence" subsections). This is no longer a design-stage prediction — it is a measured result. Nothing in Phases 2 onward should re-open this question.
+Every pick below was benchmarked from scratch against every realistic alternative (see `benchmark/results/RESULTS.md`, Runs 1–12, and doc 05's "Benchmark Evidence" subsections). This is no longer a design-stage prediction — it is a measured result. Nothing in Phases 2 onward should re-open this question.
 
 | Subsystem | Final data structure | Confirmed by |
 | :--- | :--- | :--- |
-| Order book price list | **Radix Tree** (16-ary) | Run 1, 2, 10, 11 |
-| Order queue (FIFO + cancel) | **Doubly Linked List + Hash Map** | Run 6 |
-| Currency arbitrage scanner | **Directed Graph + Bellman-Ford** | Run 3, 4, 5 |
-| Trader account cache | **Hash Map + LRU** | Run 7 |
-| Currency ticker lookup/autocomplete | **Trie** | Run 8 |
+| Order book price list | **Radix Tree** (16-ary) | Run 1, 2, 10, 11, 12c |
+| Order queue (FIFO + cancel) | **Doubly Linked List + Hash Map** | Run 6, 12a |
+| Currency arbitrage scanner | **Directed Graph + Bellman-Ford** | Run 3, 4, 5, 12b |
+| Trader account cache | **Hash Map + LRU** | Run 7, 12d |
+| Currency ticker lookup/autocomplete | **Trie** | Run 8, 12d |
 | Trade log compression | **Huffman Coding** | Run 9 |
 
-Two optional, non-blocking items remain open (do not let them delay Phase 2+): Ladder v2b (2-3 tree / B-tree / B+ — syllabus coverage, not a live candidate) and a deeper-book adversarial queue run. Pick these up opportunistically if time allows later in the roadmap.
+Run 12 re-checked these picks after a harness-fairness review: no verdict changed, but some supporting speed margins were corrected (e.g. Radix vs Red-Black is a speed tie — Radix's case is memory and tick-range robustness). Two optional, non-blocking items remain open (do not let them delay Phase 2+): Ladder v2b (2-3 tree / B-tree / B+ — syllabus coverage, not a live candidate) and a deeper-book adversarial queue run. Pick these up opportunistically if time allows later in the roadmap.
 
 ---
 
