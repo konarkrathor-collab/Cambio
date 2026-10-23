@@ -1,6 +1,6 @@
 # Backend bug log
 
-Every bug found while building the backend: what broke, why, and the fix (doc 08 §3 rule 10). Neither benchmark bug below is fixed in `benchmark/`, which is frozen (rule 11). Each is fixed in the production port and covered by a test.
+Every bug found while building the backend (and, from Stage 5, the dashboard: entries F1, F2…): what broke, why, and the fix (doc 08 §3 rule 10). Neither benchmark bug below is fixed in `benchmark/`, which is frozen (rule 11). Each is fixed in the production port and covered by a test.
 
 ---
 
@@ -214,6 +214,22 @@ With shallow books the baseline wins or ties; with deep books the engine stays n
 **Fix.** The App writes the reserved counters at startup, before the first command. After every command it writes a fresh reserve at once if any counter has used half of the reserve on disk. The flush interval and the reserve are now `App.Config` parameters, so a test can disable the timer. The new test (`crash with no flush since the ids were issued…`) sets the flush interval to an hour, issues 40 orders and copies the data directory mid-run, as the crash. It then restarts on the copy and requires the next order id, trade id and `seq` to exceed every earlier one. It runs twice: once with the default reserve, and once with a reserve of 8 that has to be renewed several times during the run. **Proof it can fail:** with the reserve removed (`long add = 0`) the test fails with `an id repeated after the crash: ORD-1 seq 1, trade 1 (max before: ORD-40, trade 20, seq 40)`. The same happens with the Stage 4 behaviour restored (no startup write).
 
 **Also from the addendum.** A baseline that settled at the taker's limit price instead of the maker's passed every Stage 4 test, because only trades and counts were compared. The comparison now includes every simulation trader's final cash (`cashMatch`, part of `checksumMatch`). With that mutation, 3 tests fail. The first is `engine and naive baseline agree…`, which fails on `shallow seed 1 n 1000: finalCash […] vs […]`.
+
+---
+
+## F1: The pair picker could choose the previous query's pair (Stage 5, frontend, found in a headless-browser run)
+
+**What broke.** The picker kept the last suggestions on screen while the next query's 150 ms debounce ran. Typing `eur/usd` and pressing Enter at once chose the first suggestion of the previous query, `USD/JPY`. A headless Chromium run of the golden path caught it: the demo then seeded the wrong pair.
+
+**Fix.** Suggestions are stored with the prefix they answer. They are shown, and can be chosen, only while that prefix matches the typed text. Enter on a complete listed pair (`gbp/usd`, `EUR-USD`) chooses it at once, without waiting for suggestions. `src/lib/picker.js` holds the rule and `forms.test.js` tests it. Re-run in the browser: a fast "type, Enter" on `gbp/usd` selects GBP/USD, and on the partial `aud/n` nothing changes.
+
+---
+
+## F2: Through the dev proxy, the event stream never noticed the backend going away (Stage 5, frontend tooling)
+
+**What broke.** With the backend killed (SIGTERM or `kill -9`), a stream fetched directly from `:8080` ended within a second. The same stream through the Vite proxy on `:5173` stayed open indefinitely: the proxy did not pass the upstream close on to the browser. `EventSource` never fired `error`, so the top bar still said "stream open" during an outage, and nothing reconnected on its own.
+
+**Fix.** `vite.config.js` destroys the browser-side response when the upstream stream closes. `EventSource` then reconnects, gets the proxy's 502 while the backend is down, and the client replaces the closed source every 3 s until the backend is back. Measured through the proxy: the stream ends 1.01 s after SIGTERM and 1.01 s after `kill -9`. In the headless run the top bar showed "stream closed", and after the restart it showed "open" again, with every snapshot refetched. This affects only `npm run dev`. Stage 7 serves the built dashboard from the Java server, without the proxy.
 
 ---
 

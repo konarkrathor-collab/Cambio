@@ -1,0 +1,29 @@
+{
+  "name": "arbitrage-dashboard",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "description": "Stage 5 dashboard for the order-matching and arbitrage-detection backend",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "d3-force": "3.0.0",
+    "d3-scale": "4.0.2",
+    "d3-selection": "3.0.0",
+    "d3-shape": "3.2.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

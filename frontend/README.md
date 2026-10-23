@@ -1,0 +1,95 @@
+# Dashboard (Stage 5)
+
+A React dashboard for the backend: order book, order ticket, trades and accounts; the
+currency graph with the detected cycle; the simulator; the structure inspector; and
+clearly labelled demo tools. It is built against the frozen contract in
+`documentation/09_api_contract.md` and talks only to the backend. There is no CDN, no web
+font and no other network request.
+
+## Requirements
+
+- Node.js **22.12 or newer** (Vitest 5 needs it) and npm 10.
+- The backend: a JDK 17 or newer (see `backend/`).
+
+## Run it
+
+```sh
+# 1. the backend, with the demo's twelve traders (terminal 1)
+backend/run.sh serve --seed-demo-accounts          # http://127.0.0.1:8080
+
+# 2. the dashboard (terminal 2)
+cd frontend
+npm ci                                              # exact versions from package-lock.json
+npm run dev                                         # http://127.0.0.1:5173
+```
+
+Open <http://127.0.0.1:5173>. The dev server proxies `/api` to `http://127.0.0.1:8080`,
+including the event stream, unbuffered. The Python feed (`feed/`) is optional. Without it
+the data-source badge says WAITING, and DEMO › Inject loophole drives the arbitrage view.
+
+Other scripts:
+
+```sh
+npm test            # Vitest, once (no watch)
+npm run build       # production build into frontend/dist
+npm run preview     # serve frontend/dist on 127.0.0.1:4173 (no /api proxy; Stage 7 serves it from Java)
+```
+
+## Views
+
+| Tab | What it shows |
+| :--- | :--- |
+| Top bar | Data-source badge: LIVE (green), or amber for FALLBACK, REPLAY or stale live data. WAITING and DISCONNECTED. Also backend health, retried with back-off; the event stream's state; and the engine's `seq`. |
+| Market | Pair picker (Trie search, 150 ms debounce, arrow keys and Enter); the order book ladder with depth bars and the spread; the depth chart; the order ticket; this session's resting orders with cancel; the trades feed (history plus live, newest first, 100 rows); accounts in simulation units. |
+| Arbitrage | The 12-currency graph: the layout is settled once, so it never jumps. Dimmed nodes have no rate; faint dashed edges are stale; the cycle glows and pulses. Also the cycle's legs, multiplier and profit; the scanner's threshold, counts and source; and the last 20 loophole alerts. |
+| Simulator | The `POST /api/simulate` form (presets, seed, baseline, profile, scan interval, volatility), checked against the contract's ranges, including the 200,000-order cap for deep runs with the baseline. Engine versus baseline table and bars, with `checksumMatch`. The doc 04 targets marked MET or MISSED; a miss is never hidden. The last result loads on mount. |
+| Inspector | Per side: levels with order counts and the FIFO queue head, and the ladder's B+ tree shape. Refreshed on every book update for the pair and every 2 s. |
+| DEMO drawer | Seed flow: N seeded crossing orders from traders 1–11. Inject loophole: a +0.4% EUR/USD, GBP/USD, EUR/GBP tick set sent with `"replay": true`, so the badge shows REPLAY. It clears by itself when the quotes expire after 30 s. Every action is logged. |
+
+## How it works
+
+- `src/lib/api.js`: `fetch` wrapper. It returns parsed JSON, or throws
+  `ApiError{status, code, message}` with the codes of contract §2. `NETWORK` (status 0, or a
+  proxy 502/504) means the backend could not be reached.
+- `src/lib/stream.js`: the one shared `EventSource('/api/stream')`, opened at start-up. On every
+  (re)open the runtime refetches the book, trades, status, scan, graph and accounts, because
+  missed events are not replayed (contract §4). A source the browser closed for good
+  (for example a 503) is replaced after 3 s.
+- `src/lib/reducers.js`: pure reducers for `BOOK_UPDATE`, `TRADE`, `LOOPHOLE_ALERT`,
+  `RATE_TICK` and the snapshots. They also track the session's own resting orders, by `seq`,
+  so a fill is never counted twice. `src/lib/store.js` applies queued events once per
+  animation frame, so a burst of events costs one render.
+- Prices: always shown with the pair's tick decimals (`src/lib/format.js`). A typed price is
+  checked as an exact decimal string and sent as that string (`src/lib/decimal.js`).
+- Order ticket validation (`src/lib/validation.js`) mirrors the contract in two levels.
+  Input the server would answer with a **400** (not a number, a missing price, a fractional
+  quantity) is an error, and the order is not sent. A well-formed order the engine will
+  **reject** is a warning naming the reason (UNKNOWN_PAIR, BAD_QUANTITY, BAD_PRICE,
+  NO_LIQUIDITY, MARGIN). It can still be sent, so every rejection path can be shown.
+
+## Tests
+
+`npm test` runs 120 Vitest tests in Node, with no browser:
+
+- the API wrapper's error mapping
+- every reducer, including fill accounting for the session's own orders
+- the batching store
+- the stream client (with a fake `EventSource`)
+- price, number and exact-decimal formatting
+- cumulative depth and spread maths
+- order-ticket and simulator-form validation
+- the picker's Enter rule
+- the badge mapping
+- the doc 04 target evaluation
+- the demo generators
+- the graph layout
+- a replay of the recorded `/api/stream` transcript from contract §7 (read from the
+  contract itself) through the reducers
+
+## Known behaviour
+
+- Chrome logs every HTTP error response in the console as "Failed to load resource", even
+  when the page handles it. On the golden path that happens for
+  `GET /api/simulate/last` → 404 `NO_SIMULATION` on a fresh server (twice in `npm run dev`,
+  where React StrictMode mounts twice), and for a deliberate 409. While the backend is down,
+  the proxy's 502s are logged too. The application itself logs nothing.
