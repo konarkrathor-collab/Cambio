@@ -4,25 +4,31 @@ import ads.bench.core.Rng;
 
 /**
  * CANDIDATE (doc 05 §2, rejected): randomized balanced BST (treap) keyed by orderId —
- * faithful to the rubric's "Balanced Tree keyed by orderId" row. enqueue (insert) and
- * cancel (find + delete) are expected O(log n); but PEEK and DEQUEUE-head need the OLDEST
- * live order, and id order is NOT arrival order, so the treap pays a full O(n) traversal
- * to locate the FIFO head. That index mismatch is exactly what the rubric penalized
- * (Op. Fit = 3) — this candidate measures the real cost of it. Priorities come from the
- * instance's own seeded RNG so replays are reproducible.
+ * faithful to the rubric's "Balanced Tree keyed by orderId" row. Because order ids are
+ * assigned in increasing arrival order (see the {@link QueueOps} contract — the same thing
+ * a real exchange's sequencer does), the FIFO head is simply the SMALLEST id: peek and
+ * dequeue-head walk to the leftmost node in expected O(log n). enqueue (insert) and cancel
+ * (find + delete) are expected O(log n) too — so this is "O(log N) everywhere", exactly the
+ * rubric's claim, and the bench measures what that costs against the O(1) pick.
+ *
+ * <p><b>Correction (Run 12):</b> the first version of this class assumed id order was NOT
+ * arrival order and located the head with a full O(n) traversal by an arrival sequence
+ * number. The workload has always assigned ids in arrival order, so that traversal was a
+ * handicap the structure does not actually have; it made this candidate ~100x slower than
+ * the pick in Run 6. Enqueueing a non-increasing id now throws rather than silently
+ * returning the wrong head. Priorities come from the instance's own seeded RNG so replays
+ * are reproducible.
  */
 public final class TreeQueueOps implements QueueOps {
   private static final class Node {
     final long id;
-    final long seq; // arrival sequence; FIFO order = ascending seq
     final long volume;
     final long prio; // min-heap priority (lower value = higher priority)
     Node left;
     Node right;
 
-    Node(long id, long seq, long volume, long prio) {
+    Node(long id, long volume, long prio) {
       this.id = id;
-      this.seq = seq;
       this.volume = volume;
       this.prio = prio;
     }
@@ -30,7 +36,7 @@ public final class TreeQueueOps implements QueueOps {
 
   private final Rng rng;
   private Node root;
-  private long nextSeq;
+  private long lastId = Long.MIN_VALUE;
   private int count;
   private int dumpIndex;
 
@@ -40,7 +46,12 @@ public final class TreeQueueOps implements QueueOps {
 
   @Override
   public void enqueue(long orderId, long volume) {
-    root = insert(root, new Node(orderId, nextSeq++, volume, rng.nextLong()));
+    if (orderId <= lastId) {
+      throw new IllegalArgumentException("order ids must increase in arrival order: "
+          + orderId + " after " + lastId);
+    }
+    lastId = orderId;
+    root = insert(root, new Node(orderId, volume, rng.nextLong()));
     count++;
   }
 
@@ -73,23 +84,21 @@ public final class TreeQueueOps implements QueueOps {
   @Override
   public long dequeueHead() {
     if (root == null) return -1;
-    Node oldest = oldest(root, null);
-    root = erase(root, oldest.id);
+    long id = leftmost(root).id;
+    root = erase(root, id);
     count--;
-    return oldest.id;
+    return id;
   }
 
   @Override
   public long peekHead() {
-    return root == null ? -1 : oldest(root, null).id;
+    return root == null ? -1 : leftmost(root).id;
   }
 
-  /** Treap has no arrival index: walk the whole tree for the smallest seq. O(n). */
-  private static Node oldest(Node h, Node best) {
-    if (h == null) return best;
-    if (best == null || h.seq < best.seq) best = h;
-    best = oldest(h.left, best);
-    return oldest(h.right, best);
+  /** Oldest live order = smallest id (ids increase with arrival). Expected O(log n). */
+  private static Node leftmost(Node h) {
+    while (h.left != null) h = h.left;
+    return h;
   }
 
   @Override

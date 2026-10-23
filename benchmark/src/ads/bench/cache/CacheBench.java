@@ -1,8 +1,7 @@
 package ads.bench.cache;
 
-import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
-import ads.bench.core.Stats;
+import ads.bench.core.Interleaved;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -19,7 +18,8 @@ import java.util.Map;
  *       residency equality (all ids, not a sample) at three mid-stream checkpoints plus
  *       the end — an eviction-order proof, not a spot check.</li>
  * </ul>
- * Then the usual discipline: warmup reps discarded, timed reps, allocation measurement.
+ * Then the usual discipline: warmup reps discarded, timed reps (interleaved
+ * round-robin across candidates — {@link Interleaved}), allocation measurement.
  */
 public final class CacheBench {
   private static final long FNV_OFFSET = 0xcbf29ce484222325L;
@@ -116,31 +116,19 @@ public final class CacheBench {
     return null;
   }
 
-  public static BenchResult timed(String bench, String name, Factory factory, CacheWorkload w,
-      int warmup, int reps, AllocCounter alloc, String note) {
-    for (int i = 0; i < warmup; i++) {
-      replay(factory.create(), w); // JIT warmup, discarded
-    }
-    long[] times = new long[reps];
-    for (int i = 0; i < reps; i++) {
-      System.gc();
-      CacheOps s = factory.create();
-      long t0 = System.nanoTime();
-      replay(s, w);
-      times[i] = System.nanoTime() - t0;
-    }
-    long allocDelta = -1;
-    if (alloc.isEnabled()) {
-      System.gc();
-      long a0 = alloc.bytes();
-      CacheOps s = factory.create(); // construction included (table pre-allocation must show)
-      replay(s, w);
-      allocDelta = alloc.bytes() - a0;
-    }
-    double median = Stats.median(times);
-    return new BenchResult(bench, name, w.n, w.seed, reps, true,
-        Stats.min(times) / 1e6, median / 1e6, Stats.max(times) / 1e6,
-        allocDelta < 0 ? -1.0 : (double) allocDelta / w.n, note);
+  /** Timed unit for {@link Interleaved}: fresh structure (untimed), then one full replay. */
+  public static Interleaved.Trial trial(Factory factory, CacheWorkload w) {
+    return new Interleaved.Trial() {
+      @Override
+      public Object setup() {
+        return factory.create();
+      }
+
+      @Override
+      public void run(Object s) {
+        replay((CacheOps) s, w);
+      }
+    };
   }
 
   public static BenchResult failed(String bench, String name, CacheWorkload w, int reps,

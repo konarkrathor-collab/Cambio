@@ -1,8 +1,7 @@
 package ads.bench.arbitrage;
 
-import ads.bench.core.AllocCounter;
 import ads.bench.core.BenchResult;
-import ads.bench.core.Stats;
+import ads.bench.core.Interleaved;
 
 /**
  * Phase 2+3 harness: for each candidate —
@@ -10,15 +9,18 @@ import ads.bench.core.Stats;
  *   <li>verify against either the independent brute-force oracle (small graphs) or a
  *       cross-candidate reference verdict (large graphs, where the oracle is combinatorially
  *       infeasible — see {@link BruteForceOracle});</li>
- *   <li>warmup replays, discarded;</li>
- *   <li>timed reps (build + detect, a full replay) -&gt; median + min/max spread;</li>
+ *   <li>warmup rounds, discarded, then timed reps — interleaved round-robin across all
+ *       candidates ({@link Interleaved});</li>
  *   <li>thread-allocation measurement.</li>
  * </ol>
  *
- * <p>Unlike the ladder bench's long operation stream, one "replay" here is a single
- * build+detect(+reconstruct) pass — appropriate given the graphs involved are tiny (8-50
- * vertices); {@code reps} exists purely for timing stability, same role as in the ladder
- * bench.
+ * <p>The timed unit is one SCAN = build + {@code hasNegativeCycle()}. Cycle
+ * reconstruction is NOT timed: it runs only on the verification path, as the
+ * {@link GraphOps} contract states (the earlier harness timed it anyway on graphs with a
+ * cycle). A scan on these graphs takes microseconds, so each timed rep runs a batch of
+ * {@link #scansPerRep} scans and reports the per-scan median, and warmup is extended to
+ * at least {@link #MIN_WARMUP_SCANS} scans per candidate — the old 3-scan warmup left the
+ * first candidate measured before the JIT had compiled it.
  */
 public final class ArbitrageBench {
   public interface Factory {
@@ -28,6 +30,28 @@ public final class ArbitrageBench {
   private ArbitrageBench() {
   }
 
+  /** Each candidate executes at least this many scans before any timed rep. */
+  public static final int MIN_WARMUP_SCANS = 2_000;
+
+  /** Scans per timed rep, sized to ~2M edge relaxations (roughly a couple of ms). */
+  public static int scansPerRep(ArbitrageWorkload w) {
+    long work = (long) w.v * w.edgeFrom.length;
+    return (int) Math.max(1, 2_000_000L / Math.max(1, work));
+  }
+
+  /** Warmup rounds so every candidate reaches {@link #MIN_WARMUP_SCANS}. */
+  public static int warmupRounds(ArbitrageWorkload w, int warmup) {
+    int per = scansPerRep(w);
+    return Math.max(warmup, (MIN_WARMUP_SCANS + per - 1) / per);
+  }
+
+  /** The timed unit: build + detect only (no reconstruction — see class doc). */
+  public static boolean scanOnce(GraphOps g, ArbitrageWorkload w) {
+    g.build(w.v, w.edgeFrom, w.edgeTo, w.edgeWeight);
+    return g.hasNegativeCycle();
+  }
+
+  /** Verification path: detect AND reconstruct. Never timed. */
   public static DetectResult runOnce(GraphOps g, ArbitrageWorkload w) {
     g.build(w.v, w.edgeFrom, w.edgeTo, w.edgeWeight);
     boolean has = g.hasNegativeCycle();
@@ -97,32 +121,26 @@ public final class ArbitrageBench {
     return null;
   }
 
-  public static BenchResult timed(String bench, String name, Factory factory, ArbitrageWorkload w,
-      int warmup, int reps, AllocCounter alloc) {
-    for (int i = 0; i < warmup; i++) {
-      runOnce(factory.create(), w);
-    }
-    long[] times = new long[reps];
-    for (int i = 0; i < reps; i++) {
-      System.gc();
-      GraphOps g = factory.create();
-      long t0 = System.nanoTime();
-      runOnce(g, w);
-      times[i] = System.nanoTime() - t0;
-    }
-    long allocDelta = -1;
-    if (alloc.isEnabled()) {
-      System.gc();
-      long a0 = alloc.bytes();
-      GraphOps g = factory.create();
-      runOnce(g, w);
-      allocDelta = alloc.bytes() - a0;
-    }
-    double median = Stats.median(times);
-    int edgeCount = w.edgeFrom.length; // reused as BenchResult's "n" — see note in Main.java
-    return new BenchResult(bench, name, edgeCount, w.seed, reps, true,
-        Stats.min(times) / 1e6, median / 1e6, Stats.max(times) / 1e6,
-        allocDelta < 0 ? -1.0 : (double) allocDelta / Math.max(1, edgeCount), w.label);
+  /** Prevents dead-code elimination of scan verdicts. */
+  private static volatile int blackhole;
+
+  /** Timed unit for {@link Interleaved}: a batch of {@code perRep} fresh build+detect scans. */
+  public static Interleaved.Trial trial(Factory factory, ArbitrageWorkload w, int perRep) {
+    return new Interleaved.Trial() {
+      @Override
+      public Object setup() {
+        return null; // instances are created per scan inside run(); creation is trivial
+      }
+
+      @Override
+      public void run(Object ignored) {
+        int found = 0;
+        for (int i = 0; i < perRep; i++) {
+          if (scanOnce(factory.create(), w)) found++;
+        }
+        blackhole ^= found;
+      }
+    };
   }
 
   public static BenchResult failed(String bench, String name, ArbitrageWorkload w, int reps,
