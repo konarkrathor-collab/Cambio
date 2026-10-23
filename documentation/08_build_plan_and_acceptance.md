@@ -192,11 +192,52 @@ Errors use one shape: `{"error":{"code":"…","message":"…"}}` with correct HT
 
 **Gate.** The supervisor re-runs 5,000 and 1,000,000 orders and reproduces the figures within normal variance. Tests: the same seed gives the same `tradeChecksum`; engine and naive baseline agree (`checksumMatch`) over several seeds and sizes; a simulation leaves the live book, accounts and event stream untouched; a second simulation while one runs gets 409; bad parameters get 400; the percentile calculation is checked on a known array. Targets from doc 04 (≥ 50,000 orders/s; scan < 100 µs on a 20-currency graph, taken from `test.sh --scan-timing`) are checked and the **measured** values reported honestly, met or not.
 
+### Stage 4 addendum — four follow-ups found in review (own commit, before Stage 5 work)
+
+1. **A second, deep-book profile for the simulator (additive).** On the default mix the books stay shallow (about 50 resting orders across six pairs), and there a linear scan is as fast as the engine (B11, reproduced independently: 0.5x to 1.04x). That is an honest result and stays the default. The structures matter when books are deep, as real ones are, so add an optional request field `profile`: `"shallow"` (default, today's mix, unchanged byte for byte) or `"deep"`. `deep`: a wide price band (about ±5,000 ticks around the mid), BUYs priced below and SELLs above the mid so most orders rest, roughly 10% aggressive orders that cross, about 10% cancels and a few market orders, so each pair accumulates thousands of resting orders over a long run. Document the mix in `OrderGenerator`. Because the naive baseline costs O(resting orders) per operation, cap `numOrders` at 200,000 when `profile` is `deep` and `baseline` is true (400 otherwise, stated in the contract). Add the field, the cap and captured examples to `09_api_contract.md`, extend `simulate.sh` (`PROFILE=deep`), add tests (deep is deterministic, engine and baseline agree, the deep run really does reach thousands of resting orders), and report both profiles at several sizes. **Report the result whichever way it falls; do not tune the mix to favour the engine.**
+2. **A crash test that can fail.** The current test waits for a periodic counter flush and then copies the data directory, so no ids were issued *after* the last flush, which is the one case the 1,000,000 reserve exists for (a mutation removing the reserve passed all 190 tests). Make the flush interval an `App` parameter; in the test set it very long, issue orders, copy the directory (the crash), restart, and assert every new id exceeds every id issued before. Show in your report that removing the reserve now fails the test.
+3. **Compare balances, not just trades, between engine and baseline.** A mutation that made the baseline settle at the wrong price passed every test, because only trades, rejects, cancels and resting counts were compared. Include every simulation trader's final cash (and the total) in the engine-versus-baseline comparison, so `checksumMatch` is false if settlement differs. Show that the same mutation now fails a test.
+4. **Decision recorded on B8.** Triangular arbitrage is the project's definition and is now exact. The longer (5 to 7 leg) loops that remain unreported near the threshold are bid/ask noise accumulating over many legs, not tradeable opportunities, and the default 0.02% shows none on real data. Mark B8 **accepted as a documented limitation** in `backend/BUGS.md` and doc 06 (triangles exact, longer loops best-effort). Do not build the exhaustive search.
+
 ### Stage 5 — React dashboard
 
-**Build.** `frontend/` (Vite + React, JavaScript, `d3` for charts and graph; dev server proxies `/api` to the backend). Views: order book ladder with cumulative depth chart; order form with Trie autocomplete on the pair; live trades feed (SSE); currency graph where the detected cycle glows and shows multiplier and profit %; simulator panel (inputs, throughput, latency, baseline comparison); account/margin panel; inspector (levels, queues, ladder node shape); a data-source badge (live / fallback / stale) driven by `/rates/status`.
+**Build.** `frontend/`: Vite + React (JavaScript, JSX), `d3-force`, `d3-scale`, `d3-shape` and `d3-selection` for charts and the graph, Vitest for tests. No UI framework, no CSS framework, no CDN, no web fonts from the network, no runtime request except to the backend (use system and `ui-monospace` fonts). `package-lock.json` is committed and versions are pinned, so `npm ci` works from a fresh clone. `npm run dev` serves on 127.0.0.1:5173 with a Vite proxy sending `/api` to `http://127.0.0.1:8080` (the event stream must pass through unbuffered); `npm run build` produces `frontend/dist`. **No backend changes in this stage.** The contract is frozen; if you find a gap, stop and report it instead of changing anything.
 
-**Gate.** `npm run build` clean; the supervisor drives the golden path in a real browser (place orders that cross, cancel, watch the book and trades update, trigger a loophole, run the simulator) and checks edge cases (empty book, rejected order, feed down).
+**Data layer (one place, tested).**
+- `api.js`: a thin `fetch` wrapper that returns parsed JSON or throws `ApiError{status, code, message}` mirroring contract §2.
+- One shared `EventSource('/api/stream')` created at start-up. Its state (connecting, open, closed) is visible in the top bar. Missed events are not replayed (contract §4), so on every (re)open refetch the snapshots: order book, trades, status, scan.
+- Pure reducers apply `BOOK_UPDATE`, `TRADE`, `LOOPHOLE_ALERT` and `RATE_TICK` to state. Rendering is batched to at most one render per animation frame, so a burst of events cannot freeze the page.
+- Prices arrive as JSON numbers. Always format with the pair's `tickSize` decimals; never show a raw float. Volumes and cumulative values are integers.
+
+**Views** (one page with panels or tabs; works at 1280 × 720 and up):
+1. **Top bar:** app name; a data-source badge from `/api/market/rates/status` (LIVE, FALLBACK, REPLAY, WAITING, DISCONNECTED; amber for fallback, replay or stale, and a demo injection must never look live); backend health with automatic retry; stream state; engine `seq`.
+2. **Market:**
+   - Pair picker with Trie autocomplete (`/api/tickers?prefix=`, 150 ms debounce, keyboard navigation, shows the tick size). Default EUR/USD.
+   - **Order book ladder:** asks above and bids below, the best prices next to the spread; each row shows price, volume, orders and cumulative with a depth bar; a spread row between. Changes may flash briefly but must respect `prefers-reduced-motion`.
+   - **Depth chart** (d3): cumulative step areas for bids and asks.
+   - **Order ticket:** trader (from `/api/accounts`), side, type, price (disabled for MARKET) and quantity, with client-side validation that mirrors the contract. After submit show the status, the reason in plain words and a fills table; a 400 shows the server's message.
+   - **Cancel:** the UI tracks orders it placed in this session (from POST responses and `TRADE` events) and offers cancel for those still resting.
+   - **Trades feed:** history from `GET /api/trades?pair=` on load plus live `TRADE` events, newest first, at most 100 rows.
+   - **Account panel:** cash and margin limit labelled "simulation units" with a tooltip "price tick × quantity; cash can go negative (contract §1)".
+3. **Arbitrage:**
+   - A d3-force graph of the 12 currencies from `/api/arbitrage/graph`. Inactive nodes are dimmed, stale edges are faint and dashed, and the current cycle glows and pulses, with its legs, multiplier and profit % shown prominently.
+   - A panel with the threshold (`minProfitPercent`), last scan time, scan count, excluded edges and source.
+   - A list of the last 20 `LOOPHOLE_ALERT` events (found or cleared, with time).
+   - With no cycle show: "No loophole above X%. Real markets close these within milliseconds, so this is the expected result." The layout must not jump when the cycle changes: settle the force layout once, then fix the node positions.
+4. **Simulator:**
+   - A form: `numOrders` presets (5,000, 50,000, 1,000,000), seed, baseline toggle, `profile` (shallow or deep, once the Stage 4 addendum lands), `scanEvery` and `rateVolatility`.
+   - Disabled while running; handle 400 and 409 visibly.
+   - Results: an engine-versus-baseline table (orders/s, submit and cancel p50 and p99, trades, resting orders, speedup, `checksumMatch` shown as a tick or cross) with a simple bar comparison.
+   - The doc 04 targets shown next to the measured values as met or missed, **never hiding a miss**.
+   - Load `GET /api/simulate/last` on mount.
+5. **Inspector:** `GET /api/inspector/{pair}` refreshed on `BOOK_UPDATE` for the selected pair and every 2 s while the tab is open. Per side show the levels with order counts and the queue head (trader, remaining), plus the ladder's shape (height, nodes, leaves) as a readable structure diagram.
+6. **Demo tools** (a collapsible drawer clearly labelled DEMO): "Seed flow" posts N seeded crossing orders from the demo traders so the book is never empty; "Inject loophole" posts a +0.4% EUR/USD, GBP/USD, EUR/GBP tick set to `POST /api/market/rates` with `"replay": true`, so the badge shows REPLAY and the injection is never presented as live data. Each action logs what it did.
+
+**Quality bar.** A clean, dense, trading-terminal look (dark by default); tabular monospaced numerals for every number; colour is never the only signal (label bid and ask as well); WCAG AA contrast and visible keyboard focus; `aria-live` for order results and alerts; no layout shift on updates; a meaningful empty, loading and error state for every panel (backend down, no data, rejected order). No placeholder data, no browser console errors or warnings, no unused dependencies.
+
+**Tests.** Vitest unit tests for the API wrapper's error mapping, every reducer, price and number formatting, cumulative-depth maths and the order-ticket validation, plus a test that replays a recorded `/api/stream` transcript (from contract §7) through the reducers.
+
+**Gate.** `npm ci && npm test && npm run build` clean from a fresh clone; `frontend/README.md` with run instructions. The supervisor starts the seeded backend and `npm run dev` and drives the golden path in a real browser: place crossing orders and watch the book, depth, trades and balances update; cancel; every rejection case; run a simulation (shallow and deep); trigger a loophole with the demo tool and watch it glow then clear; kill the backend and see the degraded states and the recovery after a restart; check the browser console is clean.
 
 ### Stage 6 — Integration and hardening
 
@@ -207,7 +248,7 @@ Errors use one shape: `{"error":{"code":"…","message":"…"}}` with correct HT
 
 ### Stage 7 — Delivery
 
-Re-run the benchmark lab and the production parity suite; update docs 03 and 05 with production-vs-benchmark results and add a short "what changed after Stage 0" note; a `start-all.sh` that launches backend, feed and frontend; README run instructions that work from a fresh clone; demo script with the "why this structure" answer per subsystem; release tag.
+Re-run the benchmark lab and the production parity suite; update docs 03 and 05 with production-vs-benchmark results and add a short "what changed after Stage 0" note; **restate the doc 04 performance targets with their measured values** (scan time at the real graph sizes of 7 to 12 currencies against the 20-currency stress figure, throughput, cancel latency), keeping the original targets visible and marking each met or missed; serve the built dashboard from the Java server (`serve --static-dir frontend/dist`, with correct content types, path-traversal protection and a fall-back to `index.html` for non-`/api` paths) so a demo needs one port; a `start-all.sh` that launches backend, feed and frontend; README run instructions that work from a fresh clone; a demo script with the "why this structure" answer per subsystem; release tag.
 
 ---
 
