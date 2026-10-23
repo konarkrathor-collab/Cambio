@@ -112,6 +112,9 @@ ex "Invalid JSON" POST /api/orders '{"traderId":1,'
 ex "Unknown enum value" POST /api/orders '{"traderId":1,"pair":"EUR/USD","side":"HOLD","type":"LIMIT","price":1.08,"quantity":1}'
 ex "Missing price on a LIMIT order" POST /api/orders '{"traderId":1,"pair":"EUR/USD","side":"BUY","type":"LIMIT","quantity":1}'
 ex "Unknown field" POST /api/orders '{"traderId":1,"pair":"EUR/USD","side":"BUY","type":"LIMIT","price":1.08,"qty":1}'
+echo "### Recent trades"
+ex "Recent trades, newest first (pair optional, limit 1-500)" GET "/api/trades?pair=EUR-USD&limit=5"
+ex "Limit out of range" GET "/api/trades?limit=501"
 echo "### Order book and inspector"
 ex "Order book (path uses '-', depth 5)" GET "/api/orderbook/EUR-USD?depth=5"
 ex "Unknown pair" GET /api/orderbook/XXX-YYY

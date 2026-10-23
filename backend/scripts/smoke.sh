@@ -86,6 +86,8 @@ req POST /api/orders 200 '{"traderId":12,"pair":"EUR/USD","side":"BUY","type":"L
 req POST /api/orders 400 '{"traderId":1,"pair":"EUR/USD","side":"HOLD","type":"LIMIT","price":1.08,"quantity":1}' '"BAD_REQUEST"'
 req POST /api/orders 400 '{not json' '"BAD_JSON"'
 
+req GET  "/api/trades?pair=eur-usd&limit=5"  200 "" '"count":2'
+req GET  "/api/trades?limit=501"            400 "" '"BAD_REQUEST"'
 req GET  "/api/orderbook/EUR-USD?depth=5"    200 "" '"asks":\[{"price":1.08510,"volume":30'
 req GET  /api/orderbook/eur-usd              200 "" '"lastTradePrice":1.08510'
 req GET  /api/orderbook/XXX-YYY              404 "" '"UNKNOWN_PAIR"'

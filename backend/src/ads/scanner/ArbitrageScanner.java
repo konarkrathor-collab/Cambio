@@ -42,8 +42,12 @@ import ads.directory.Directory;
  * there (one Bellman-Ford run instead of V). The result is identical either way.
  *
  * <p>Exact detection of "some simple cycle earns at least t" is NP-hard in general (it
- * contains the longest-path problem); the gap above is the documented price of a scan that
- * costs at most (V+1) x V x E relaxations. Doubles are fine here: no order is priced or
+ * contains the longest-path problem), and on real bid/ask-alternating ticks the passes miss
+ * most cycles near the threshold (BUGS.md B8). This project is about TRIANGULAR arbitrage,
+ * so the scan then also checks every directed triangle exactly (V = 12: 440 of them) and
+ * reports the more profitable of the two: any triangle at or above the threshold is always
+ * reported. Longer cycles keep the Bellman-Ford guarantee above. Cost: at most
+ * (V+1) x V x E relaxations plus one pass over the triangles. Doubles are fine here: no order is priced or
  * matched in the scanner.
  */
 public final class ArbitrageScanner {
@@ -223,6 +227,34 @@ public final class ArbitrageScanner {
     return minProfitPercent;
   }
 
+  /**
+   * The best multiplier over every directed triangle {@code a -> b -> c -> a} whose three
+   * rates are usable at {@code nowMs}, writing it into {@code out} (a, b, c, a); 0 if none.
+   * Each triangle is visited once: {@code a} is its smallest vertex, and both directions
+   * are distinct triangles. V = 12 gives 440, V = 20 gives 2,280.
+   */
+  private double bestTriangle(long nowMs, int[] out) {
+    double best = 0.0;
+    for (int a = 0; a < n; a++) {
+      for (int b = a + 1; b < n; b++) {
+        if (!usable(a, b, nowMs)) continue;
+        double ab = rate[a][b];
+        for (int c = a + 1; c < n; c++) {
+          if (c == b || !usable(b, c, nowMs) || !usable(c, a, nowMs)) continue;
+          double m = ab * rate[b][c] * rate[c][a];
+          if (m > best) {
+            best = m;
+            out[0] = a;
+            out[1] = b;
+            out[2] = c;
+            out[3] = a;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
   /** Scans with every known rate, ignoring validity (quotes that never expire). */
   public ScanResult scan() {
     return scan(Long.MIN_VALUE);
@@ -285,6 +317,17 @@ public final class ArbitrageScanner {
         best = cycle;
         bestMultiplier = multiplier;
       }
+    }
+    // exact triangular check (closes BUGS.md B8): every directed triangle, each once
+    int[] tri = new int[4];
+    double triBest = bestTriangle(nowMs, tri);
+    if ((triBest - 1.0) * 100.0 >= minProfitPercent) {
+      if (triBest > bestMultiplier) { // on a tie the Bellman-Ford cycle is kept
+        best = tri;
+        bestMultiplier = triBest;
+      }
+    } else if (triBest > 1.0) {
+      sawBelow = true;
     }
     if (best == null) {
       return new ScanResult(false, null, 1.0, 0.0, edges, excluded, sawBelow);

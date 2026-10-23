@@ -63,6 +63,8 @@ final class ServiceTests {
           + " profit", ServiceTests::scannerSnapshot);
       r.check("0.001% threshold: +0.0005% ignored, +0.002% reported; pure-USD-derived noise"
           + " never reported", ServiceTests::scannerThreshold);
+      r.check("5000 graphs with bid/ask noise at the threshold: every triangle >= threshold"
+          + " reported (no triangle gap)", ServiceTests::scannerTrianglesNoGap);
       r.check("3000 random rate sets vs brute-force cycle enumeration (exact check + guarantee)",
           ServiceTests::scannerBruteForce);
 
@@ -473,6 +475,7 @@ final class ServiceTests {
       }
       double[] stats = cycleStats(s, d.currencyCount(), lnGain);
       double best = stats[0];
+      double bestTri = bestTrianglePercent(s, d.currencyCount());
       boolean guaranteed = stats[1] > 1e-9; // some cycle: ln-gain > k/2 * ln(1+t)
       ScanResult r = s.scan();
       if (best >= thr) aboveThreshold++;
@@ -488,11 +491,71 @@ final class ServiceTests {
         return TestRunner.Result.fail("trial " + trial + ": missed a guaranteed cycle (best "
             + best + "%)");
       } else if (best >= thr) {
-        gap++;
+        gap++; // a cycle of 4+ edges between t and the Bellman-Ford guarantee
+      }
+      if (bestTri >= thr && (!r.hasArbitrage() || r.profitPercent() < bestTri - 1e-9)) {
+        return TestRunner.Result.fail("trial " + trial + ": a " + bestTri + "% triangle was not"
+            + " reported (scanner said " + (r.hasArbitrage() ? r.profitPercent() + "%" : "none") + ")");
       }
     }
     return TestRunner.Result.pass(reported + " reported of " + aboveThreshold
-        + " trials with a cycle >= 0.001%; " + gap + " in the documented gap");
+        + " trials with a cycle >= " + thr + "%; " + gap + " in the documented gap (cycles of"
+        + " 4+ edges; triangles have none)");
+  }
+
+  /** Brute force over every ordered triple: the best triangle profit (%) at time 0. */
+  static double bestTrianglePercent(ArbitrageScanner s, int n) {
+    double best = Double.NEGATIVE_INFINITY;
+    for (int a = 0; a < n; a++) {
+      for (int b = 0; b < n; b++) {
+        for (int c = 0; c < n; c++) {
+          if (a == b || b == c || a == c) continue;
+          if (!(s.rate(a, b) > 0) || !(s.rate(b, c) > 0) || !(s.rate(c, a) > 0)) continue;
+          best = Math.max(best, (s.rate(a, b) * s.rate(b, c) * s.rate(c, a) - 1) * 100);
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The B8 regime: every cross quoted directly with bid/ask-sized noise around the
+   * threshold, so many near-equal triangles straddle it. The scanner must report whenever
+   * any triangle reaches the threshold (no gap), at a profit at least that triangle's.
+   */
+  private static TestRunner.Result scannerTrianglesNoGap() {
+    Directory d = new Directory();
+    Rng rng = new Rng(2026);
+    double thr = ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT;
+    int withTriangle = 0;
+    for (int trial = 0; trial < 5_000; trial++) {
+      ArbitrageScanner s = new ArbitrageScanner(d, thr);
+      int k = 4 + rng.nextInt(5); // 4..8 non-USD currencies
+      int usd = d.currencyId("USD");
+      for (int i = 1; i <= k; i++) s.onTick(usd, i, 0.2 + rng.nextInt(100_000) / 1_000.0);
+      for (int a = 1; a <= k; a++) {
+        for (int b = a + 1; b <= k; b++) {
+          if (rng.nextInt(3) == 0) continue; // not every cross is quoted
+          double noise = 1.0 + (rng.nextInt(2_001) - 1_000) / 1_000.0 * thr / 100 * 1.5;
+          s.onTick(a, b, s.rate(a, b) * noise);
+        }
+      }
+      double bestTri = bestTrianglePercent(s, d.currencyCount());
+      ScanResult r = s.scan();
+      if (bestTri >= thr) {
+        withTriangle++;
+        if (!r.hasArbitrage() || r.profitPercent() < bestTri - 1e-9) {
+          return TestRunner.Result.fail("trial " + trial + ": best triangle " + bestTri
+              + "% but scanner " + (r.hasArbitrage() ? r.profitPercent() + "%" : "none"));
+        }
+      }
+      if (r.hasArbitrage()) {
+        String p = cycleProblem(s, d, r);
+        if (p != null) return TestRunner.Result.fail("trial " + trial + ": " + p);
+      }
+    }
+    return TestRunner.Result.pass(withTriangle + " of 5000 graphs had a triangle >= "
+        + thr + "%; every one reported");
   }
 
   /**

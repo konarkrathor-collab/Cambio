@@ -94,15 +94,15 @@ Not every cross-pair in an 8-currency complete graph is directly streamed by Fin
 
 **Choosing the profit threshold.** Finnhub's OANDA ticks alternate between bid and ask, so cycles of about 0.01% appear constantly in real data and cannot be traded. Replaying the committed capture (`feed/samples/finnhub_ticks_2026-10-23.jsonl`: 3,690 ticks over 299 s, 432 scans throttled to 500 ms, each quote usable for 30 s) through `backend/run.sh threshold-study` gives:
 
-| Threshold | Scans where the scanner reports a cycle | Scans where some cycle reaches it (exhaustive search) |
-| :-: | :-: | :-: |
-| 0.001% | 429 / 432 (99.31%) | 429 / 432 (99.31%) |
-| 0.005% | 427 / 432 (98.84%) | 427 / 432 (98.84%) |
-| 0.010% | 58 / 432 (13.43%) | 286 / 432 (66.20%) |
-| 0.020% | 0 / 432 (0.00%) | 0 / 432 (0.00%) |
-| 0.050% | 0 / 432 (0.00%) | 0 / 432 (0.00%) |
+| Threshold | Scanner reports a cycle | Exhaustive search: some cycle reaches it | Triangles only: some triangle reaches it |
+| :-: | :-: | :-: | :-: |
+| 0.001% | 429 / 432 (99.31%) | 429 / 432 (99.31%) | 429 / 432 (99.31%) |
+| 0.005% | 427 / 432 (98.84%) | 427 / 432 (98.84%) | 427 / 432 (98.84%) |
+| 0.010% | 58 / 432 (13.43%) | 286 / 432 (66.20%) | 4 / 432 (0.93%) |
+| 0.020% | 0 / 432 (0.00%) | 0 / 432 (0.00%) | 0 / 432 (0.00%) |
+| 0.050% | 0 / 432 (0.00%) | 0 / 432 (0.00%) | 0 / 432 (0.00%) |
 
-Best-cycle profit per scan, exhaustive: p50 0.01070%, p90 0.01314%, p99 0.01562%, max 0.01652%. The default is the smallest candidate for which fewer than 1% of scans report a cycle: **0.02%**. At 0.010% the scanner reports far fewer scans than actually contain a qualifying cycle. That is the Bellman-Ford detection gap documented in `backend/BUGS.md` B4 and B8. It does not affect the 0.02% default, because no real cycle reached 0.02%.
+Best-cycle profit per scan, exhaustive: p50 0.01070%, p90 0.01314%, p99 0.01562%, max 0.01652%. The default is the smallest candidate for which fewer than 1% of scans report a cycle: **0.02%**. At 0.010% the scanner reports far fewer scans than actually contain a qualifying cycle. That is the Bellman-Ford detection gap documented in `backend/BUGS.md` B4 and B8. Since the Stage 3 addendum the scanner also checks every triangle exactly, so a qualifying triangle is never missed. The "triangles only" column shows that the real near-threshold cycles are almost never triangles: in the 286 scans at 0.010%, the best cycle has 5 legs in 4 of them, 6 legs in 38 and 7 legs in 244. The gap that remains at 0.010% is therefore all longer cycles. It does not affect the 0.02% default, because no real cycle reached 0.02%.
 
 ---
 

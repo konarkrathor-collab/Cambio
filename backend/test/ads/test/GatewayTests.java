@@ -66,6 +66,12 @@ final class GatewayTests {
         + " order", GatewayTests::concurrentEqualsSerial);
     r.check("accounts and the logbook survive a restart through the API",
         GatewayTests::restart);
+    r.check("ids and seq continue across a clean restart; an old session's order is a 404",
+        GatewayTests::idsContinue);
+    r.check("after a crash (data dir copied mid-run) the next session never repeats an id",
+        GatewayTests::idsAfterCrash);
+    r.check("GET /api/trades: newest first, pair filter, limit 1-500, ring of 500",
+        () -> withApp(GatewayTests::recentTrades));
   }
 
   // ---------------------------------------------------------------- harness
@@ -661,6 +667,121 @@ final class GatewayTests {
     } finally {
       deleteTree(dir);
     }
+  }
+
+  private static long idOf(Map<?, ?> order) {
+    return Long.parseLong(((String) order.get("orderId")).substring(4));
+  }
+
+  private static TestRunner.Result idsContinue() throws Exception {
+    Path dir = Files.createTempDirectory("ads-gw-ids-");
+    try {
+      App first = startApp(dir);
+      Client c = new Client(first);
+      Map<?, ?> resting = c.order(1, "EUR/USD", "SELL", "LIMIT", "1.09000", 10);
+      c.order(2, "EUR/USD", "SELL", "LIMIT", "1.08500", 10);
+      Map<?, ?> fill = c.order(3, "EUR/USD", "BUY", "LIMIT", "1.08500", 10);
+      long lastId = idOf(fill);
+      long lastTrade = (Long) ((Map<?, ?>) ((List<?>) fill.get("trades")).get(0)).get("tradeId");
+      long lastSeq = (Long) fill.get("seq");
+      first.stop();
+      String file = Files.readString(dir.resolve("counters.json"));
+      check(file.contains("\"clean\":true"), "clean shutdown not recorded: " + file);
+      App second = startApp(dir);
+      try {
+        Client c2 = new Client(second);
+        c2.order(2, "EUR/USD", "SELL", "LIMIT", "1.08500", 5);
+        Map<?, ?> next = c2.order(3, "EUR/USD", "BUY", "LIMIT", "1.08500", 5);
+        long tradeId = (Long) ((Map<?, ?>) ((List<?>) next.get("trades")).get(0)).get("tradeId");
+        check(idOf(next) == lastId + 2 && tradeId == lastTrade + 1
+            && (Long) next.get("seq") == lastSeq + 2, "counters did not continue: " + next);
+        check(c2.errorCode(c2.send("DELETE", "/api/orders/" + resting.get("orderId"), null))
+            .equals("404 ORDER_NOT_FOUND"), "old session's resting order");
+      } finally {
+        second.stop();
+      }
+      return TestRunner.Result.pass("ORD-" + (lastId + 2) + " and trade " + (lastTrade + 1)
+          + " after the restart; seq " + (lastSeq + 2));
+    } finally {
+      deleteTree(dir);
+    }
+  }
+
+  private static TestRunner.Result idsAfterCrash() throws Exception {
+    Path dir = Files.createTempDirectory("ads-gw-crash-");
+    Path copy = Files.createTempDirectory("ads-gw-crash-copy-");
+    App running = startApp(dir);
+    try {
+      Client c = new Client(running);
+      long maxId = 0;
+      long maxTrade = 0;
+      for (int i = 0; i < 40; i++) {
+        Map<?, ?> r = c.order(1 + i % 5, "EUR/USD", i % 2 == 0 ? "SELL" : "BUY", "LIMIT", "1.08500", 3);
+        maxId = Math.max(maxId, idOf(r));
+        for (Object t : (List<?>) r.get("trades")) {
+          maxTrade = Math.max(maxTrade, (Long) ((Map<?, ?>) t).get("tradeId"));
+        }
+      }
+      long deadline = System.currentTimeMillis() + 10_000;
+      Path counters = dir.resolve("counters.json");
+      while (!(Files.exists(counters) && Files.readString(counters).contains("\"clean\":false"))) {
+        check(System.currentTimeMillis() < deadline, "no periodic counter flush");
+        Thread.sleep(100);
+      }
+      try (Stream<Path> files = Files.walk(dir)) { // the "crash": a snapshot, no shutdown
+        for (Path p : (Iterable<Path>) files::iterator) {
+          Path target = copy.resolve(dir.relativize(p).toString());
+          if (Files.isDirectory(p)) Files.createDirectories(target);
+          else Files.copy(p, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+      }
+      App recovered = startApp(copy);
+      try {
+        Client c2 = new Client(recovered);
+        c2.order(2, "EUR/USD", "SELL", "LIMIT", "1.08500", 5);
+        Map<?, ?> next = c2.order(3, "EUR/USD", "BUY", "LIMIT", "1.08500", 5);
+        long tradeId = (Long) ((Map<?, ?>) ((List<?>) next.get("trades")).get(0)).get("tradeId");
+        check(idOf(next) > maxId && tradeId > maxTrade, "an id repeated after the crash: " + next
+            + " (max before: ORD-" + maxId + ", trade " + maxTrade + ")");
+        return TestRunner.Result.pass("before: ORD-" + maxId + "/trade " + maxTrade + "; after: "
+            + next.get("orderId") + "/trade " + tradeId + " (skipped ahead, never repeated)");
+      } finally {
+        recovered.stop();
+      }
+    } finally {
+      running.stop();
+      deleteTree(dir);
+      deleteTree(copy);
+    }
+  }
+
+  private static TestRunner.Result recentTrades(Client c) throws Exception {
+    check(((Long) c.json("GET", "/api/trades", null, 200).get("count")) == 0, "not empty at start");
+    for (int i = 0; i < 260; i++) { // 520 trades: 260 EUR/USD pairs + 260 USD/JPY
+      c.order(1, "EUR/USD", "SELL", "LIMIT", "1.08500", 1);
+      c.order(2, "EUR/USD", "BUY", "LIMIT", "1.08500", 1);
+      c.order(1, "USD/JPY", "SELL", "LIMIT", "156.000", 1);
+      c.order(2, "USD/JPY", "BUY", "LIMIT", "156.000", 1);
+    }
+    Map<?, ?> def = c.json("GET", "/api/trades", null, 200);
+    List<?> t = (List<?>) def.get("trades");
+    long first = (Long) ((Map<?, ?>) t.get(0)).get("tradeId");
+    long second = (Long) ((Map<?, ?>) t.get(1)).get("tradeId");
+    check(def.get("count").equals(50L) && def.get("limit").equals(50L) && first == 520 && second == 519
+        && def.get("pair") == null, "default " + def.get("count") + " first " + first);
+    Map<?, ?> all = c.json("GET", "/api/trades?limit=500", null, 200);
+    List<?> ta = (List<?>) all.get("trades");
+    check(all.get("count").equals(500L)
+        && (Long) ((Map<?, ?>) ta.get(499)).get("tradeId") == 21, "ring keeps the newest 500");
+    Map<?, ?> jpy = c.json("GET", "/api/trades?pair=usd-jpy&limit=3", null, 200);
+    check("USD/JPY".equals(jpy.get("pair")) && jpy.get("count").equals(3L)
+        && "USD/JPY".equals(((Map<?, ?>) ((List<?>) jpy.get("trades")).get(0)).get("pair"))
+        && same(((Map<?, ?>) ((List<?>) jpy.get("trades")).get(0)).get("price"), "156.000"), "pair " + jpy);
+    for (String bad : new String[] { "0", "501", "x", "" }) {
+      check(c.errorCode(c.send("GET", "/api/trades?limit=" + bad, null)).equals("400 BAD_REQUEST"), bad);
+    }
+    check(c.errorCode(c.send("GET", "/api/trades?pair=XXX-YYY", null)).equals("404 UNKNOWN_PAIR"), "404");
+    return TestRunner.Result.pass("520 trades: newest 500 kept, newest first");
   }
 
   static void deleteTree(Path root) throws Exception {

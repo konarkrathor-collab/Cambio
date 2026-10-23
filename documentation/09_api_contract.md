@@ -72,6 +72,7 @@ Every error has one shape, with an HTTP status:
 | `GET /api/arbitrage/graph` | Currency graph: nodes, edges, current cycle | 200 | |
 | `POST /api/market/rates` | Ingestion from the feed (doc 08 Appendix B) | 200 | 400 |
 | `GET /api/market/rates/status` | Feed source, freshness and scan counters | 200 | |
+| `GET /api/trades?pair=P&limit=N` | Recent trades, newest first (added at the Stage 3 addendum) | 200 | 400, 404 |
 | `GET /api/tickers?prefix=US` | Directory search | 200 | |
 | `GET /api/accounts` | List accounts | 200 | |
 | `GET /api/accounts/{traderId}` | One account | 200 | 400, 404 |
@@ -110,7 +111,7 @@ For each of `bids` and `asks`: `levelCount` (all active levels), `levels` (best 
 
 ### 3.5 `GET /api/arbitrage/scan`
 
-The latest scan; it does not run a new one. Scans run after rate updates (throttled to one per 500 ms) and whenever a quote expires. Fields: `hasArbitrage`, `cycle` (currency codes with first = last; `[]` if none), `multiplier` (product of the rates around the cycle), `profitPercent`, `minProfitPercent` (the threshold: 0.02 by default; see doc 06 §5), `edges` (rates used), `excludedEdges` (stale rates left out), `belowThreshold` (a cycle existed but earned less than the threshold), `scanCount`, `scannedAt` (null before the first scan).
+The latest scan; it does not run a new one. Scans run after rate updates (throttled to one per 500 ms) and whenever a quote expires. Since the Stage 3 addendum every scan also checks all triangles exactly, so any three-currency loop at or above the threshold is always reported (see backend/BUGS.md B8 for longer loops). Fields: `hasArbitrage`, `cycle` (currency codes with first = last; `[]` if none), `multiplier` (product of the rates around the cycle), `profitPercent`, `minProfitPercent` (the threshold: 0.02 by default; see doc 06 §5), `edges` (rates used), `excludedEdges` (stale rates left out), `belowThreshold` (a cycle existed but earned less than the threshold), `scanCount`, `scannedAt` (null before the first scan).
 
 ### 3.6 `GET /api/arbitrage/graph`
 
@@ -139,6 +140,10 @@ Status fields:
 
 `{status: "ok", seq, restingOrders, accounts, sseClients, sseDropped, uptimeMs}`. The response comes from the engine thread, so a stuck engine shows up as a `500 INTERNAL` after 10 s instead of an `ok`.
 
+### 3.11 `GET /api/trades?pair=P&limit=N` (additive, Stage 3 addendum)
+
+The trade history a dashboard needs on page load; the event stream only delivers new trades. Trades come from an in-memory ring of the last 500 trades of this server session, held on the engine thread, so the list is empty after a restart. The archive in the Logbook keeps every trade. `pair` is optional, normalized as everywhere (`EUR-USD`, `eur/usd`); an unknown pair is 404 `UNKNOWN_PAIR`. `limit` defaults to 50, and anything outside 1 to 500 is 400 `BAD_REQUEST`. Response: `pair` (normalized, or null), `limit`, `count`, and `trades` (**newest first**, each in the shape of `trades[]` in §3.1).
+
 ## 4. Event stream: `GET /api/stream`
 
 Server-Sent Events (`text/event-stream`; use `new EventSource("/api/stream")`). The stream opens with `retry: 3000` and a `: connected` comment. Every event carries `id:` (strictly increasing), `event:` and one line of `data:` JSON. A `: heartbeat` comment is sent after 15 s without events.
@@ -154,8 +159,8 @@ Server-Sent Events (`text/event-stream`; use `new EventSource("/api/stream")`). 
 
 ## 5. What is deliberately not here
 
-- There is no `GET /api/orders/{id}` and no order history. The book and the trade stream are the views. Trades are archived in the Logbook (`<data-dir>/logbook`, Huffman segments).
-- Books, order ids and trade ids are per server session. Accounts persist across a restart; resting orders do not.
+- There is no `GET /api/orders/{id}` and no order history. The book, `GET /api/trades` (the last 500 trades) and the trade stream are the views. Trades are archived in the Logbook (`<data-dir>/logbook`, Huffman segments).
+- Resting orders and the book are per server session; a restart starts with empty books, so cancelling an order from a previous session is 404 `ORDER_NOT_FOUND`. **Order ids, trade ids and `seq` continue across restarts** (Stage 3 addendum; a compatible change). They are kept in `<data-dir>/counters.json` and written with the Vault. After a graceful stop they continue exactly. After a crash they skip ahead by up to 1,000,000 and never repeat. Accounts persist too.
 - There is no authentication. The server binds to localhost.
 
 ## 6. Stage 2 payloads (unchanged)
@@ -164,7 +169,7 @@ Doc 08 Appendix B, plus the optional `replay` flag (§3.7).
 
 ## 7. Captured examples
 
-<!-- captured by backend/scripts/contract_examples.sh on 2026-10-23T20:13:42Z -->
+<!-- captured by backend/scripts/contract_examples.sh on 2026-10-23T20:30:40Z -->
 
 ### 7 · Health and directory
 #### Health
@@ -182,7 +187,7 @@ Response: **200**
     "accounts": 12,
     "sseClients": 0,
     "sseDropped": 0,
-    "uptimeMs": 135
+    "uptimeMs": 160
 }
 ```
 
@@ -927,6 +932,76 @@ Response: **400**
 }
 ```
 
+### 7 · Recent trades
+#### Recent trades, newest first (pair optional, limit 1-500)
+
+```http
+GET /api/trades?pair=EUR-USD&limit=5
+```
+Response: **200**
+
+```json
+{
+    "pair": "EUR/USD",
+    "limit": 5,
+    "count": 3,
+    "trades": [
+        {
+            "tradeId": 3,
+            "pair": "EUR/USD",
+            "price": 1.08500,
+            "quantity": 50,
+            "buyOrderId": "ORD-2",
+            "sellOrderId": "ORD-5",
+            "buyerId": 2,
+            "sellerId": 4,
+            "takerSide": "SELL",
+            "seq": 5
+        },
+        {
+            "tradeId": 2,
+            "pair": "EUR/USD",
+            "price": 1.08510,
+            "quantity": 10,
+            "buyOrderId": "ORD-4",
+            "sellOrderId": "ORD-1",
+            "buyerId": 3,
+            "sellerId": 901,
+            "takerSide": "BUY",
+            "seq": 4
+        },
+        {
+            "tradeId": 1,
+            "pair": "EUR/USD",
+            "price": 1.08510,
+            "quantity": 60,
+            "buyOrderId": "ORD-3",
+            "sellOrderId": "ORD-1",
+            "buyerId": 1,
+            "sellerId": 901,
+            "takerSide": "BUY",
+            "seq": 3
+        }
+    ]
+}
+```
+
+#### Limit out of range
+
+```http
+GET /api/trades?limit=501
+```
+Response: **400**
+
+```json
+{
+    "error": {
+        "code": "BAD_REQUEST",
+        "message": "limit must be an integer from 1 to 500, got \"501\""
+    }
+}
+```
+
 ### 7 · Order book and inspector
 #### Order book (path uses '-', depth 5)
 
@@ -1148,7 +1223,7 @@ Response: **200**
     "replay": false,
     "connected": true,
     "lastTickAt": "2026-10-23T19:24:28.461Z",
-    "lastPayloadAt": "2026-10-23T20:13:43.430Z",
+    "lastPayloadAt": "2026-10-23T20:30:41.242Z",
     "tickCount": 3,
     "rejectedTicks": 1,
     "payloads": 1,
@@ -1156,7 +1231,7 @@ Response: **200**
     "staleSymbols": [],
     "fallbackAsOf": null,
     "scanCount": 1,
-    "lastScanAt": "2026-10-23T20:13:43.431Z",
+    "lastScanAt": "2026-10-23T20:30:41.243Z",
     "lastScanFoundCycle": true,
     "excludedEdges": 0,
     "minProfitPercent": 0.02,
@@ -1165,13 +1240,13 @@ Response: **200**
     "lastScan": {
         "hasArbitrage": true,
         "cycle": [
-            "GBP",
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "USD"
         ],
-        "multiplier": 1.003997222222222,
-        "profitPercent": 0.39972222222219855,
+        "multiplier": 1.0039972222222222,
+        "profitPercent": 0.39972222222222076,
         "edges": 6,
         "excludedEdges": 0,
         "belowThreshold": false
@@ -1190,19 +1265,19 @@ Response: **200**
 {
     "hasArbitrage": true,
     "cycle": [
-        "GBP",
         "USD",
         "EUR",
-        "GBP"
+        "GBP",
+        "USD"
     ],
-    "multiplier": 1.003997222222222,
-    "profitPercent": 0.39972222222219855,
+    "multiplier": 1.0039972222222222,
+    "profitPercent": 0.39972222222222076,
     "minProfitPercent": 0.02,
     "edges": 6,
     "excludedEdges": 0,
     "belowThreshold": false,
     "scanCount": 1,
-    "scannedAt": "2026-10-23T20:13:43.431Z"
+    "scannedAt": "2026-10-23T20:30:41.243Z"
 }
 ```
 
@@ -1311,12 +1386,12 @@ Response: **200**
         }
     ],
     "cycle": [
-        "GBP",
         "USD",
         "EUR",
-        "GBP"
+        "GBP",
+        "USD"
     ],
-    "scannedAt": "2026-10-23T20:13:43.431Z"
+    "scannedAt": "2026-10-23T20:30:41.243Z"
 }
 ```
 
@@ -1500,7 +1575,7 @@ data: {"pair":"EUR/GBP","rate":0.83409,"ts":1792783468461,"source":"finnhub-ws"}
 
 id: 13
 event: LOOPHOLE_ALERT
-data: {"hasArbitrage":true,"cycle":["GBP","USD","EUR","GBP"],"multiplier":1.003997222222222,"profitPercent":0.39972222222219855,"minProfitPercent":0.02,"edges":6,"excludedEdges":0,"belowThreshold":false,"scanCount":1,"scannedAt":"2026-10-23T20:13:43.431Z","active":true}
+data: {"hasArbitrage":true,"cycle":["USD","EUR","GBP","USD"],"multiplier":1.0039972222222222,"profitPercent":0.39972222222222076,"minProfitPercent":0.02,"edges":6,"excludedEdges":0,"belowThreshold":false,"scanCount":1,"scannedAt":"2026-10-23T20:30:41.243Z","active":true}
 
 id: 14
 event: RATE_TICK
@@ -1520,6 +1595,6 @@ data: {"pair":"USD/INR","rate":96.73,"ts":null,"source":"frankfurter-fallback"}
 
 id: 18
 event: LOOPHOLE_ALERT
-data: {"hasArbitrage":false,"cycle":[],"multiplier":1,"profitPercent":0,"minProfitPercent":0.02,"edges":20,"excludedEdges":0,"belowThreshold":false,"scanCount":2,"scannedAt":"2026-10-23T20:13:43.933Z","active":false}
+data: {"hasArbitrage":false,"cycle":[],"multiplier":1,"profitPercent":0,"minProfitPercent":0.02,"edges":20,"excludedEdges":0,"belowThreshold":false,"scanCount":2,"scannedAt":"2026-10-23T20:30:41.744Z","active":false}
 
 ```

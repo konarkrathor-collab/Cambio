@@ -143,11 +143,21 @@ The default is now 0.02% (`ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT`). It can
 
 ---
 
-## B8: Near the threshold, the scanner misses most real cycles (Stage 2 addendum, measured; not fixed)
+## B8: Near the threshold, the scanner misses most real cycles (Stage 2 addendum, measured; triangles closed at the Stage 3 addendum, longer cycles still open)
 
-**What the threshold study showed.** At a 0.010% threshold, an exhaustive search over every simple cycle finds a cycle of at least 0.010% in 286 of 432 scans of the real capture. The scanner reports one in only 58. This is the gap B4 documented, and on real data it is large. Live ticks produce many cycles of almost the same profit, about 0.01%. On a shifted pass, Bellman-Ford returns *some* negative cycle, usually one just under the threshold, so no shifted pass returns the qualifying one. The 3,000 random graphs in the brute-force test never showed this. Real bid/ask noise does.
+**What the threshold study showed.** At a 0.010% threshold, an exhaustive search over every simple cycle finds a cycle of at least 0.010% in 286 of 432 scans of the real capture. The scanner reports one in only 58. This is the gap B4 documented, and on real data it is large. Live ticks produce many cycles of almost the same profit, about 0.01%. On a shifted pass, Bellman-Ford returns *some* negative cycle, usually one just under the threshold, so no shifted pass returns the qualifying one.
 
-**Why it is not fixed now.** It does not affect the chosen default. At 0.02% both the scanner and the exhaustive search report 0 of 432 scans, and the largest real cycle was 0.0165%. A complete fix is possible for the live graph (7 currencies, about 2,400 simple cycles, cheap to enumerate exhaustively whenever the base pass finds a negative cycle). It would not scale to the 12-currency fallback graph, where the number of cycles explodes. That fallback graph is consistent through USD, though, so its base pass already returns early. This is a design decision for the supervisor, not an implementer's call.
+**Stage 3 addendum: exact triangles.** Every scan now also checks every directed triangle exactly (440 at V = 12, 2,280 at V = 20) and reports the more profitable of that and the Bellman-Ford result. A test of 5,000 graphs with bid/ask-sized noise at the threshold found a qualifying triangle in 4,886 of them, and the scanner reported every one. The brute-force test also now requires that no triangle is ever missed.
+
+**What it did not close.** Re-running `threshold-study` with a "triangles only" column:
+
+```
+threshold   scanner reports a cycle      exhaustive: some cycle >= t      triangles only: some triangle >= t
+  0.010%      58 / 432  ( 13.43%)        286 / 432  ( 66.20%)          4 / 432  (  0.93%)
+legs of the best cycle in scans where it reaches 0.010%: 5 legs=4 6 legs=38 7 legs=244
+```
+
+On real ticks the near-threshold cycles are almost never triangles. Bid/ask noise accumulates along long loops, usually through all 7 live currencies. So the scanner column did not move (58 at 0.010%), and the gap for cycles of 4 or more legs remains. It still does not affect the 0.02% default, where both the scanner and the exhaustive search report 0 of 432. **Possible fix, for the supervisor to decide:** run an exhaustive simple-cycle search whenever at most 8 currencies are active. That is about 2,400 cycles for the 7-currency live graph and at most about 17,000 for 8, so it costs microseconds. Otherwise keep triangles plus Bellman-Ford, which covers the 12-currency fallback graph. That graph is consistent through USD anyway, so its base pass exits early.
 
 ---
 

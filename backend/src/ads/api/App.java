@@ -57,6 +57,9 @@ public final class App {
   public static final int LOGBOOK_ROTATE_EVERY = 500;
   public static final int DEFAULT_DEPTH = 10;
   public static final int MAX_DEPTH = 50;
+  /** Recent trades kept for GET /api/trades. */
+  public static final int TRADE_RING = 500;
+  public static final int DEFAULT_TRADES = 50;
   private static final Logger LOG = Logger.getLogger(App.class.getName());
   private static final Set<String> ORDER_FIELDS =
       Set.of("traderId", "pair", "side", "type", "price", "quantity");
@@ -80,6 +83,11 @@ public final class App {
   private final MarketService market;
   private final ApiServer server;
   private final long[] lastTradeTick;
+  private final CounterStore counters;
+  private long countersWrittenAtSeq = -1;
+  private final Trade[] recentTrades = new Trade[TRADE_RING];
+  private int recentNext;
+  private int recentCount;
   private final long startedAt = System.currentTimeMillis();
 
   private App(Config config) throws IOException {
@@ -91,6 +99,12 @@ public final class App {
     logbook = new Logbook(config.dataDir.resolve("logbook"), directory, LOGBOOK_ROTATE_EVERY);
     engine = new MatchingEngine(directory, vault);
     engine.setTradeSink(logbook);
+    counters = new CounterStore(config.dataDir.resolve("counters.json"));
+    long[] saved = counters.load();
+    if (saved != null) {
+      engine.restoreCounters(saved[0], saved[1], saved[2]);
+    }
+    countersWrittenAtSeq = engine.sequence();
     lastTradeTick = new long[directory.pairCount()];
     Arrays.fill(lastTradeTick, -1);
     market = new MarketService(new ArbitrageScanner(directory, config.minProfitPercent), thread,
@@ -118,6 +132,7 @@ public final class App {
     try {
       thread.call(() -> {
         vault.flush();
+        counters.write(engine.nextOrderId(), engine.nextTradeId(), engine.sequence(), true);
         logbook.rotate();
         return null;
       });
@@ -130,8 +145,12 @@ public final class App {
   private void flushVault() {
     try {
       if (vault.dirty()) vault.flush();
+      if (engine.sequence() != countersWrittenAtSeq) {
+        counters.write(engine.nextOrderId(), engine.nextTradeId(), engine.sequence(), false);
+        countersWrittenAtSeq = engine.sequence();
+      }
     } catch (IOException e) {
-      LOG.log(Level.WARNING, "vault flush failed; will retry", e);
+      LOG.log(Level.WARNING, "vault/counter flush failed; will retry", e);
     }
     thread.schedule(this::flushVault, VAULT_FLUSH_MS);
   }
@@ -182,6 +201,12 @@ public final class App {
     });
     server.routeStream("GET", "/api/stream", (ex, req) -> hub.serve(ex));
     server.route("GET", "/api/health", req -> thread.call(this::health));
+    server.route("GET", "/api/trades", req -> {
+      String pairParam = req.queryParam("pair");
+      String pair = pairParam == null ? null : normalizePair(pairParam);
+      int limit = parseLimit(req.queryParam("limit"));
+      return thread.call(() -> recentTrades(pair, limit));
+    });
   }
 
   // ---------------------------------------------------------------- request parsing
@@ -313,6 +338,15 @@ public final class App {
     return (int) d;
   }
 
+  private static int parseLimit(String text) throws ApiException {
+    if (text == null) return DEFAULT_TRADES;
+    long n = positiveLong(text.trim());
+    if (n < 1 || n > TRADE_RING) {
+      throw badRequest("limit must be an integer from 1 to " + TRADE_RING + ", got \"" + text + "\"");
+    }
+    return (int) n;
+  }
+
   private static long[] parseAccount(Object body) throws ApiException {
     Map<?, ?> m = object(body, ACCOUNT_FIELDS);
     long trader = requiredLong(m, "traderId");
@@ -339,6 +373,9 @@ public final class App {
     for (int i = 0; i < r.tradeCount(); i++) {
       Trade t = r.trade(i);
       lastTradeTick[t.pairId()] = t.priceTick();
+      recentTrades[recentNext] = t;
+      recentNext = (recentNext + 1) % TRADE_RING;
+      if (recentCount < TRADE_RING) recentCount++;
       hub.publish("TRADE", trade(t));
     }
     if (r.tradeCount() > 0 || r.restingQuantity() > 0) {
@@ -443,6 +480,26 @@ public final class App {
     m.put("sellerId", t.sellerId());
     m.put("takerSide", t.takerSide().name());
     m.put("seq", t.seq());
+    return m;
+  }
+
+  /** The most recent trades first, optionally for one pair, from the in-memory ring. */
+  private Map<String, Object> recentTrades(String pair, int limit) throws ApiException {
+    int pairId = -1;
+    if (pair != null) {
+      pairId = directory.pairId(pair);
+      if (pairId < 0) throw unknownPair(pair);
+    }
+    List<Object> out = new ArrayList<>();
+    for (int i = 0; i < recentCount && out.size() < limit; i++) {
+      Trade t = recentTrades[(recentNext - 1 - i + TRADE_RING) % TRADE_RING];
+      if (pairId < 0 || t.pairId() == pairId) out.add(trade(t));
+    }
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("pair", pair == null ? null : directory.pair(pairId));
+    m.put("limit", limit);
+    m.put("count", out.size());
+    m.put("trades", out);
     return m;
   }
 

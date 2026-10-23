@@ -41,6 +41,8 @@ final class ThresholdStudy {
     ArbitrageScanner rates = new ArbitrageScanner(directory, 0.0); // for the exhaustive search
     int[] reported = new int[THRESHOLDS.length];
     List<Double> best = new ArrayList<>();
+    List<Double> bestTri = new ArrayList<>();
+    int[] lengthAtOneBp = new int[16]; // legs of the best cycle, in scans where it reaches 0.01%
     long lastScanTs = Long.MIN_VALUE / 2;
     long ticks = 0;
     long first = -1;
@@ -79,7 +81,10 @@ final class ThresholdStudy {
             for (int i = 0; i < scanners.length; i++) {
               if (scanners[i].scan(ts).hasArbitrage()) reported[i]++;
             }
-            best.add(bestCycleProfitPercent(rates, ts));
+            double b = bestCycleProfitPercent(rates, ts);
+            best.add(b);
+            if (b >= 0.01) lengthAtOneBp[lastBestLength]++;
+            bestTri.add(bestTriangleProfitPercent(rates, ts));
           }
         }
       }
@@ -95,7 +100,8 @@ final class ThresholdStudy {
     System.out.println(String.format(Locale.ROOT,
         "best-cycle profit per scan (exhaustive): p50 %.5f%%  p90 %.5f%%  p99 %.5f%%  max %.5f%%",
         pct(best, 50), pct(best, 90), pct(best, 99), best.get(scans - 1)));
-    System.out.println("threshold   scanner reports a cycle      exhaustive: some cycle >= threshold");
+    System.out.println("threshold   scanner reports a cycle      exhaustive: some cycle >= t"
+        + "      triangles only: some triangle >= t");
     double chosen = Double.NaN;
     for (int i = 0; i < THRESHOLDS.length; i++) {
       double share = 100.0 * reported[i] / scans;
@@ -103,10 +109,21 @@ final class ThresholdStudy {
       for (double b : best) {
         if (b >= THRESHOLDS[i]) exact++;
       }
-      System.out.println(String.format(Locale.ROOT, "%7.3f%%   %5d / %d  (%6.2f%%)      %5d / %d  (%6.2f%%)",
-          THRESHOLDS[i], reported[i], scans, share, exact, scans, 100.0 * exact / scans));
+      int tri = 0;
+      for (double b : bestTri) {
+        if (b >= THRESHOLDS[i]) tri++;
+      }
+      System.out.println(String.format(Locale.ROOT,
+          "%7.3f%%   %5d / %d  (%6.2f%%)      %5d / %d  (%6.2f%%)      %5d / %d  (%6.2f%%)",
+          THRESHOLDS[i], reported[i], scans, share, exact, scans, 100.0 * exact / scans,
+          tri, scans, 100.0 * tri / scans));
       if (Double.isNaN(chosen) && share < 1.0) chosen = THRESHOLDS[i];
     }
+    StringBuilder legs = new StringBuilder("legs of the best cycle in scans where it reaches 0.010%:");
+    for (int k = 2; k < lengthAtOneBp.length; k++) {
+      if (lengthAtOneBp[k] > 0) legs.append(' ').append(k).append(" legs=").append(lengthAtOneBp[k]);
+    }
+    System.out.println(legs);
     System.out.println(Double.isNaN(chosen)
         ? "recommended default: none of the candidates keeps reports under 1% of scans"
         : String.format(Locale.ROOT, "recommended default: %.3f%% (smallest threshold with"
@@ -119,18 +136,37 @@ final class ThresholdStudy {
     return sorted.get(Math.max(0, rank - 1));
   }
 
+  /** The best profit (%) over every directed triangle usable at {@code now} (0 if none). */
+  static double bestTriangleProfitPercent(ArbitrageScanner s, long now) {
+    int n = s.currencyCount();
+    double best = Double.NEGATIVE_INFINITY;
+    for (int a = 0; a < n; a++) {
+      for (int b = 0; b < n; b++) {
+        for (int c = 0; c < n; c++) {
+          if (a == b || b == c || a == c) continue;
+          if (!s.usable(a, b, now) || !s.usable(b, c, now) || !s.usable(c, a, now)) continue;
+          best = Math.max(best, (s.rate(a, b) * s.rate(b, c) * s.rate(c, a) - 1) * 100);
+        }
+      }
+    }
+    return best == Double.NEGATIVE_INFINITY ? 0.0 : best;
+  }
+
   /** The best profit (%) over every simple cycle of the graph usable at {@code now}. */
   static double bestCycleProfitPercent(ArbitrageScanner s, long now) {
     int n = s.currencyCount();
-    double[] best = { Double.NEGATIVE_INFINITY };
+    double[] best = { Double.NEGATIVE_INFINITY, 0 }; // ln-gain, legs
     boolean[] on = new boolean[n];
     for (int start = 0; start < n; start++) {
       on[start] = true;
       dfs(s, now, n, start, start, 0.0, on, best, 1);
       on[start] = false;
     }
+    lastBestLength = (int) best[1];
     return best[0] == Double.NEGATIVE_INFINITY ? 0.0 : Math.expm1(best[0]) * 100;
   }
+
+  private static int lastBestLength;
 
   private static void dfs(ArbitrageScanner s, long now, int n, int start, int at, double lnProduct,
       boolean[] on, double[] best, int len) {
@@ -138,7 +174,10 @@ final class ThresholdStudy {
       if (!s.usable(at, next, now)) continue;
       double g = lnProduct + Math.log(s.rate(at, next));
       if (next == start) {
-        if (len >= 2 && g > best[0]) best[0] = g;
+        if (len >= 2 && g > best[0]) {
+          best[0] = g;
+          best[1] = len;
+        }
       } else if (!on[next]) {
         on[next] = true;
         dfs(s, now, n, start, next, g, on, best, len + 1);

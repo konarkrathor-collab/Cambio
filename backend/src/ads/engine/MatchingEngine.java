@@ -235,4 +235,31 @@ public final class MatchingEngine {
   public long sequence() {
     return seq;
   }
+
+  /** The id the next submitted order will get. */
+  public long nextOrderId() {
+    return nextOrderId;
+  }
+
+  /** The id the next trade will get. */
+  public long nextTradeId() {
+    return nextTradeId;
+  }
+
+  /**
+   * Continues the counters of an earlier session, so order ids, trade ids and the sequence
+   * number never repeat across restarts. Allowed only before the first command, and never
+   * backwards.
+   */
+  public void restoreCounters(long nextOrderId, long nextTradeId, long seq) {
+    if (this.seq != 0 || this.nextOrderId != 1 || this.nextTradeId != 1) {
+      throw new IllegalStateException("counters can only be restored before the first command");
+    }
+    if (nextOrderId < 1 || nextTradeId < 1 || seq < 0) {
+      throw new IllegalArgumentException("bad counters " + nextOrderId + "/" + nextTradeId + "/" + seq);
+    }
+    this.nextOrderId = nextOrderId;
+    this.nextTradeId = nextTradeId;
+    this.seq = seq;
+  }
 }
