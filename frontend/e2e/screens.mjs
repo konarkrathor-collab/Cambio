@@ -9,8 +9,6 @@
 // 50,000-order simulation, so every tab has data, then saves OUT_DIR/<prefix>-<tab>-<width>.png.
 // Selectors are roles and visible text only, so the same script works on any styling.
 
-import { execSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -30,19 +28,9 @@ const H = Number(opt('height', '900'));
 const prefix = opt('prefix', 'shot');
 mkdirSync(out, { recursive: true });
 
-async function loadPlaywright() {
-  try {
-    return await import('playwright');
-  } catch {
-    const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
-    return createRequire(join(globalRoot, 'noop.js'))('playwright');
-  }
-}
-
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const { chromium } = await loadPlaywright();
-const browser = await chromium.launch();
+const browser = await launchChromium();
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 const lines = [];
 page.on('console', (m) => lines.push(`${m.type()}: ${m.text()}`));

@@ -52,6 +52,8 @@ function PaperRun({ legs }) {
   );
 }
 
+// The paper run is keyed by the set of currencies, not their order: the scanner can report the same
+// loop starting from a different currency, and that must not wipe what the user typed or ran.
 function Found({ scan, graph }) {
   const legs = legsFromCycle(scan.cycle, graph?.edges);
   return (
@@ -60,7 +62,7 @@ function Found({ scan, graph }) {
       <h1 className="found-path display">{scan.cycle.join(' → ')}</h1>
       <p className="found-gain"><span className="num">+{scan.profitPercent.toFixed(2)}%</span> possible gain</p>
       <p className="caption">Each leg converts one currency into the next. If every step fills at these prices, you finish with more than you started with.</p>
-      {legs ? <PaperRun key={scan.cycle.join('')} legs={legs} /> : <p className="empty">Prices moved while loading. The loop will update in a moment.</p>}
+      {legs ? <PaperRun key={[...new Set(scan.cycle)].sort().join('-')} legs={legs} /> : <p className="empty">Prices moved while loading. The loop will update in a moment.</p>}
     </section>
   );
 }

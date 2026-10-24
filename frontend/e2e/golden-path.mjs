@@ -13,12 +13,12 @@
 // kills and restarts the backend for the outage check, and stops everything at the end.
 // Exit code 0 only if every step passed.
 
-import { spawn, execSync } from 'node:child_process';
-import { createRequire } from 'node:module';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { launchChromium } from './pw.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -28,17 +28,6 @@ const SHOTS = process.env.SHOTS || null;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 // ---------------------------------------------------------------- Playwright, from outside package.json
-async function loadPlaywright() {
-  try {
-    return await import('playwright');
-  } catch {
-    // ES modules ignore NODE_PATH and global installs: look in npm's global root
-    const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
-    const req = createRequire(join(globalRoot, 'noop.js'));
-    return req('playwright');
-  }
-}
-
 // ---------------------------------------------------------------- processes
 const children = [];
 function start(cmd, args, opts = {}) {
@@ -87,15 +76,14 @@ async function main() {
   } catch (e) {
     if (e.message.startsWith('port 8080')) throw e;
   }
-  execSync(join(root, 'backend', 'build.sh'), { stdio: 'ignore' });
+  execFileSync(join(root, 'backend', 'build.sh'), { stdio: 'ignore' }); // not execSync: the path may contain spaces
   let backend = startBackend();
   if (preview) execSync('npx vite build', { cwd: join(root, 'frontend'), stdio: 'ignore' });
   start('npx', preview ? ['vite', 'preview'] : ['vite', '--strictPort'], { cwd: join(root, 'frontend') });
   await waitFor('http://127.0.0.1:8080/api/health');
   await waitFor(BASE);
 
-  const { chromium } = await loadPlaywright();
-  const browser = await chromium.launch();
+  const browser = await launchChromium();
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const consoleLines = [];
   const tooling = /^\[vite\]|React DevTools/; // the dev server's and React's own lines, not the app's

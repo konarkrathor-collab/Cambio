@@ -12,12 +12,12 @@
 // DATA_DIR, clicks through steps 1-7 of DEMO.md checking what the audience should see,
 // then stops start-all.sh with SIGTERM (its Ctrl-C path). Exit code 0 only if every check passed.
 
-import { spawn, execSync } from 'node:child_process';
-import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { launchChromium } from './pw.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -25,15 +25,6 @@ const PORT = process.env.PORT || '8080';
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.SHOTS || null;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-
-async function loadPlaywright() {
-  try {
-    return await import('playwright');
-  } catch {
-    const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
-    return createRequire(join(globalRoot, 'noop.js'))('playwright');
-  }
-}
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -61,7 +52,7 @@ async function main() {
     throw new Error(`port ${PORT} is in use: stop what runs there, or set PORT`);
   }
   const env = { ...process.env, PORT, DATA_DIR: mkdtempSync(join(tmpdir(), 'ads-demo-')) };
-  delete env.FINNHUB_API_KEY; // DEMO.md: "unset FINNHUB_API_KEY"
+  env.FINNHUB_API_KEY = ''; // DEMO.md: "unset FINNHUB_API_KEY"; empty also beats a .env file
   const startAll = spawn(join(root, 'start-all.sh'), [], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   startAll.stdout.on('data', (d) => { out += d; });
@@ -72,8 +63,7 @@ async function main() {
     if (!up) return;
     check('start-all.sh says it replays the capture, not live', out.includes('REPLAY of the recorded capture'));
 
-    const { chromium } = await loadPlaywright();
-    const browser = await chromium.launch();
+    const browser = await launchChromium();
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const consoleLines = [];
     page.on('console', (m) => consoleLines.push(`${m.type()}: ${m.text()}`));

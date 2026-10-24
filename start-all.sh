@@ -22,7 +22,8 @@ set -eu
 cd "$(dirname "$0")"
 
 # Optional: read settings such as FINNHUB_API_KEY from a git-ignored file named ".env" in the repo root.
-# A variable already set in the environment wins over the file.
+# A variable already set in the environment wins over the file, even when set to an empty value:
+# FINNHUB_API_KEY= ./start-all.sh forces the REPLAY feed whatever .env says.
 envfile=./.env
 if [ -f "$envfile" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
@@ -30,7 +31,7 @@ if [ -f "$envfile" ]; then
     name=${line%%=*}; value=${line#*=}
     value=${value%\"}; value=${value#\"}
     case "$name" in *[!A-Za-z0-9_]*|'') continue ;; esac
-    eval "[ -n \"\${$name:-}\" ] || export $name=\"\$value\""
+    eval "[ -n \"\${$name+x}\" ] || export $name=\"\$value\""
   done < "$envfile"
 fi
 root="$(pwd)"
