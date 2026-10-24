@@ -1,10 +1,19 @@
-# Dashboard (Stage 5)
+# Dashboard (Stage 5, redesigned in Stage 8)
 
 A React dashboard for the backend: order book, order ticket, trades and accounts; the
 currency graph with the detected cycle; the simulator; the structure inspector; and
 clearly labelled demo tools. It is built against the frozen contract in
-`documentation/09_api_contract.md` and talks only to the backend. There is no CDN, no web
-font and no other network request.
+`documentation/09_api_contract.md` and talks only to the backend. There is no CDN and no
+other network request: the two typefaces (Archivo and IBM Plex Mono, SIL Open Font
+License) are self-hosted woff2 files in `src/assets/fonts/`, bundled by Vite.
+
+**Look and motion** are specified in [DESIGN.md](./DESIGN.md): the direction, the token
+tables, the type scale, motion rules and the ban list. Every value lives once, in
+`src/styles/tokens.css`. The stylesheets are split by area: `base.css` (shell, controls,
+tables, states, intro), then `market.css`, `arbitrage.css`, `simulator.css`,
+`inspector.css` and `demo.css`. With `prefers-reduced-motion: reduce` no animation or
+transition runs. Before and after screenshots of every tab are in
+`documentation/results/screens/`.
 
 ## Requirements
 
@@ -124,6 +133,15 @@ SHOTS=/tmp/shots node frontend/e2e/golden-path.mjs   # also save screenshots
 ```sh
 node frontend/e2e/demo-script.mjs              # port 8080 must be free
 PORT=8091 node frontend/e2e/demo-script.mjs    # another port
+```
+
+`e2e/screens.mjs` saves a screenshot of every tab, and of the open DEMO drawer, from a
+system that is already running. It seeds flow, injects the loophole and runs a deep
+simulation first, and it exits non-zero if the page logged anything to the console.
+
+```sh
+./start-all.sh                                  # in another terminal
+node frontend/e2e/screens.mjs OUT_DIR --width 1440 --height 900 --prefix after
 ```
 
 ## Known behaviour

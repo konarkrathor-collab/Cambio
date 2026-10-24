@@ -76,7 +76,9 @@ await page.getByRole('tab', { name: 'Simulator' }).click();
 await page.getByLabel('Profile').selectOption('deep');
 await page.getByRole('button', { name: '50,000' }).click();
 await page.getByRole('button', { name: 'Run simulation' }).click();
-await page.getByText('profile deep').first().waitFor({ timeout: 120000 });
+await page.getByRole('button', { name: /Running/ }).waitFor({ timeout: 5000 }).catch(() => {});
+await page.getByRole('button', { name: 'Run simulation' }).waitFor({ timeout: 120000 }); // finished
+await page.getByText('profile deep').first().waitFor({ timeout: 5000 });
 await sleep(1200);
 await page.screenshot({ path: join(out, `${prefix}-simulator-${W}.png`) });
 

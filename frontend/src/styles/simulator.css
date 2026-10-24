@@ -72,6 +72,9 @@
 .target-na strong { color: var(--text-muted); }
 .sim-results > p.muted:last-child { margin: var(--sp-3) 0 0; font-size: var(--fs-data); }
 
+@media (max-width: 1439px) {
+  .grid-sim { grid-template-columns: minmax(372px, 0.7fr) minmax(0, 1.5fr); }
+}
 @media (max-width: 1279px) {
   .grid-sim { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); }
   .sim-hero { grid-template-columns: 1fr; gap: var(--sp-3); }
