@@ -11,8 +11,10 @@
 .loop-path { font-size: var(--fs-title); line-height: 1.15; margin-top: var(--s-1); }
 .loop-note { color: var(--ink-2); font-size: var(--fs-small); max-width: 38ch; }
 .loop-card .pill { align-self: flex-start; margin-top: auto; }
-.loop-found { background: var(--lime); }
-.loop-found .caption, .loop-found .loop-note { color: var(--ink); }
+.loop-found { background: var(--ink); color: var(--white); }
+.loop-found .caption, .loop-found .loop-note { color: #d4d4cf; }
+.loop-found .pill-ink { background: var(--white); color: var(--ink); }
+.loop-found .pill-ink:hover { background: var(--canvas); }
 
 .list-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--s-2); }
 .list-head h1 { font-size: var(--fs-title); }
@@ -28,9 +30,9 @@
 .mrow-name { display: flex; flex-direction: column; min-width: 0; }
 .mrow-pair { font-size: var(--fs-lead); line-height: 1.2; }
 .mrow-sub { color: var(--ink-2); font-size: var(--fs-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.price { text-align: right; font-size: var(--fs-lead); font-weight: 600; color: var(--ink); transition: color 600ms ease-out; }
-.price-up { color: var(--gain); transition: none; }
-.price-down { color: var(--loss); transition: none; }
+.price { text-align: right; font-size: var(--fs-lead); font-weight: 600; color: var(--ink); padding: 2px 8px; border-radius: 8px; background: transparent; transition: background 700ms ease-out; }
+/* a moving price gets a brief neutral highlight; gain and loss colours belong to the change badge only */
+.price-up, .price-down { background: var(--canvas); transition: none; }
 
 .chips { position: relative; width: 72px; height: 40px; display: block; }
 .chip {

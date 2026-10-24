@@ -15,12 +15,12 @@
   transition: background var(--ease-tick), color var(--ease-tick);
 }
 .nav-pill:hover { background: var(--canvas); color: var(--ink); }
-.nav-active, .nav-active:hover { background: var(--lime); color: var(--ink); }
+.nav-active, .nav-active:hover { background: var(--ink); color: var(--white); }
 .practice-chip {
   justify-self: end; display: inline-flex; align-items: center; gap: var(--s-2);
   height: 40px; padding: 0 var(--s-3); border-radius: var(--r-pill); background: var(--canvas); font-size: var(--fs-small);
 }
-.practice-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 2px var(--ink); }
+.practice-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
 .practice-label { color: var(--ink-2); }
 .practice-amount { font-weight: 600; }
 
@@ -42,7 +42,6 @@
 .pill:active { transform: scale(0.98); }
 .pill-ink { background: var(--ink); color: var(--white); }
 .pill-ink:hover { background: #2b2b2b; }
-.pill-lime { background: var(--lime); color: var(--ink); }
 .pill-quiet { background: var(--canvas); color: var(--ink); }
 .pill-quiet:hover { background: var(--line); }
 

@@ -14,13 +14,13 @@
 The blend: Revolut's typography and pills, Robinhood's single-price focus, Wise's "say exactly what happens" order confirmation.
 
 ## The idea that is ours
-**A lime highlighter.** Everything is ink on warm white. The only saturated colour is one lime (#C8F03C) used like a highlighter pen: it marks the loophole path, the active nav pill and the one primary action on a screen. Gain and loss use green and red text, always with a sign and a word. This is what keeps it from looking like a template: no blue, no purple, no gradient.
+**Ink only.** Everything is black ink on warm white, with no accent colour (the user rejected the lime highlighter on 2026-10-24). Emphasis comes from inversion: the active nav pill, the primary buttons and the "loop found" card are solid ink with white text. The only other colours are gain green and loss red, always with a sign and a word. This is what keeps it from looking like a template: no blue, no purple, no gradient, and one strong black-and-white idea.
 
 ## Feel
 Generous space, large numerals, rounded cards, pill controls. Light theme only (decided with the user). Presented full-screen on a 1440×932 MacBook, so the layout is designed for that size and stays sound from 1280 to 1920.
 
 ## Motion
-Meaningful only. Prices ease between values and flash a faint gain or loss tint. The order book bars grow and shrink. A new trade slides into the list. The loophole path draws itself across the currency map, and the "Take it" button confirms with one clear state change. Everything respects reduced motion.
+Meaningful only. Prices ease between values and flash a faint gain or loss tint. The order book bars grow and shrink. A new trade slides into the list. The loophole path draws itself in ink across the currency map, and the "Take it" button confirms with one clear state change. Everything respects reduced motion.
 
 ## Ban list in force
 No purple or blue gradient, no centred hero over a mesh, no three identical feature cards, no Inter plus slate default, no glassmorphism, no emoji as icons, no decorative blobs, no "Seamless / Elevate / Unleash" copy, no fake testimonials or fake stats. Honest copy only: this is a practice account with simulated money, and a loophole is "possible", never "guaranteed".

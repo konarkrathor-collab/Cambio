@@ -6,8 +6,8 @@ import MarketsScreen from './MarketsScreen.jsx';
 function Mark() {
   return (
     <svg className="mark" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="16" fill="var(--lime)" />
-      <path d="M9 12h11m0 0-3-3m3 3-3 3M23 20H12m0 0 3-3m-3 3 3 3" fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="16" cy="16" r="16" fill="var(--ink)" />
+      <path d="M9 12h11m0 0-3-3m3 3-3 3M23 20H12m0 0 3-3m-3 3 3 3" fill="none" stroke="var(--white)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

@@ -11,7 +11,6 @@ All values live in `src/consumer/tokens.css`. Components use tokens only.
 | `--white` | #FFFFFF | Cards, page | |
 | `--canvas` | #F5F5F2 | Page behind cards, input fill | |
 | `--line` | #E4E4DE | Hairlines | |
-| `--lime` | #C8F03C | The highlighter: loophole path, active pill, primary action. Text on it is always ink (14.0) | |
 | `--gain` | #0A7D45 | Positive change, bid side | 5.2 on white |
 | `--loss` | #C5281F | Negative change, ask side | 5.7 on white |
 Gain and loss never appear without a sign or a word.
@@ -37,8 +36,8 @@ Gain and loss never appear without a sign or a word.
 All off (instant) under `prefers-reduced-motion: reduce`.
 
 ## Components
-- **Pill button:** primary is ink with white text, 48 px tall; accent is lime with ink text; quiet is canvas. Visible 2 px ink focus ring with a 2 px white gap. Disabled is a clear grey with a reason shown.
-- **Nav pill:** the active one is filled lime.
+- **Pill button:** primary is ink with white text, 48 px tall; on an ink card the primary button inverts to white with ink text; quiet is canvas. Visible 2 px ink focus ring with a 2 px white gap. Disabled is a clear grey with a reason shown.
+- **Nav pill:** the active one is filled ink with white text.
 - **Card:** white, radius 24, padding 24.
 - **Input:** canvas fill, radius 12, 48 px tall, label above, inline error text under it in loss colour with a word, never colour alone.
 - **Figure:** `Figure` component renders any number with tabular numerals, a sign for change and a unit label.
