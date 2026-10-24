@@ -5,7 +5,7 @@
 # Environment (all optional):
 #   PORT              port for the API and the dashboard (default 8080)
 #   DATA_DIR          accounts, id counters and the trade archive (default backend/data)
-#   FINNHUB_API_KEY   if set, the feed runs live against Finnhub; if not, it replays the
+#   FINNHUB_API_KEY   (or put it in a git-ignored dotenv file; see the example file) if set, the feed runs live against Finnhub; if not, it replays the
 #                     committed capture (the dashboard badge then says REPLAY, never LIVE).
 #                     The key is read from the environment only and is never printed.
 # Steps: builds the backend if a source is newer than the build; builds the dashboard
@@ -20,6 +20,19 @@
 # up. Do not start the backend with a bare `java -cp ...`.
 set -eu
 cd "$(dirname "$0")"
+
+# Optional: read settings such as FINNHUB_API_KEY from a git-ignored file named ".env" in the repo root.
+# A variable already set in the environment wins over the file.
+envfile=./.env
+if [ -f "$envfile" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    name=${line%%=*}; value=${line#*=}
+    value=${value%\"}; value=${value#\"}
+    case "$name" in *[!A-Za-z0-9_]*|'') continue ;; esac
+    eval "[ -n \"\${$name:-}\" ] || export $name=\"\$value\""
+  done < "$envfile"
+fi
 root="$(pwd)"
 port="${PORT:-8080}"
 data="${DATA_DIR:-$root/backend/data}"

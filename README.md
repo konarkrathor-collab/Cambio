@@ -58,7 +58,7 @@ cd order-matching-arbitrage-detector
 Then open **http://127.0.0.1:8080**. The first start builds the backend and the dashboard and creates the feed's virtual environment, which takes a minute or two. `Ctrl-C` stops everything.
 
 - **Without** `FINNHUB_API_KEY` in the environment, the feed replays the committed real capture (`feed/samples/finnhub_ticks_2026-10-23.jsonl`), and the badge says **REPLAY**, never LIVE.
-- **With** the key set, the feed is live. Forex markets close at weekends, and then the badge says WAITING ("connected, no ticks").
+- **With** the key set, the feed is live. Either export `FINNHUB_API_KEY`, or copy `.env.example` to `.env` (git-ignored) and put the key there; `start-all.sh` reads it. Forex markets close at weekends, and then the badge says WAITING ("connected, no ticks").
 - `PORT=9000 ./start-all.sh` uses another port.
 - A guided 10–12 minute walkthrough is in [documentation/DEMO.md](./documentation/DEMO.md).
 
