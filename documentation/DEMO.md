@@ -128,8 +128,8 @@ If something goes wrong mid-demo, `Ctrl-C` in the terminal and `./start-all.sh` 
    - The **Scanner** panel shows the threshold, the last scan time, the scan count and the source.
 2. After the injection:
    - The drawer log says it injected a +0.4% USD/SGD 1.3, USD/HKD 7.8, SGD/HKD 6.024 tick set as REPLAY data.
-   - The three-leg cycle **USD → SGD → HKD → USD** glows and pulses on the graph.
-   - The Loophole panel shows the legs, the multiplier and a profit of **+0.4000%**.
+   - A cycle through SGD and HKD glows and pulses on the graph. It is usually the three-leg **USD → SGD → HKD → USD**. Sometimes it is a four-leg variant that mixes in a replayed quote and earns a few hundredths of a percent more. The scanner reports the best cycle, so either is correct.
+   - The Loophole panel shows the legs, the multiplier and a profit of about **+0.40%**.
    - The badge still says **REPLAY**, and a **FOUND** alert appears.
    - The graph does not move: the layout is fixed once it settles.
 3. About 30 seconds later a **CLEARED** alert appears and the message returns. The injected quotes have expired.
