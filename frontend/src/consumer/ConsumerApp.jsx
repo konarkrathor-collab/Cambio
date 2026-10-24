@@ -3,6 +3,7 @@ import { SCREENS, href, useScreen } from './route.js';
 import { splitBalance, usePracticeAccount } from './practice.js';
 import MarketsScreen from './MarketsScreen.jsx';
 import TradeScreen from './TradeScreen.jsx';
+import OpportunitiesScreen from './OpportunitiesScreen.jsx';
 
 function Mark() {
   return (
@@ -40,7 +41,7 @@ const VIEWS = {
   markets: MarketsScreen,
   trade: TradeScreen,
   portfolio: () => <ComingNext title="Portfolio" />,
-  opportunities: () => <ComingNext title="Opportunities" />,
+  opportunities: OpportunitiesScreen,
 };
 
 export default function ConsumerApp() {
