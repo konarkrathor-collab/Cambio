@@ -1,10 +1,12 @@
-# Order Matching System with Currency Loophole Detector
+# Cambio
+
+**Order Matching System with Currency Loophole Detector**: a practice currency exchange with a matching engine and a loophole scanner.
 
 > **Course:** Advanced Data Structures (ADS – `702IT0E009`)  
 > **Institution:** SVKM's NMIMS MPSTME / STME  
 > **Faculty In-Charge:** Prof. Ashwini Rao  
 > **Group Members:** Krishna Solanki (`I075`), Konark Rathor (`I062`), Palak Savla (`F054`)  
-> **Release:** v1.0.0
+> **Release:** v1.1.0
 
 A trading-exchange simulator and forex loophole scanner. Every data structure on its hot paths is written from scratch.
 
@@ -53,8 +55,8 @@ Details: [documentation/02](./documentation/02_system_architecture_and_design.md
 Needs a JDK 17 or newer, Node.js 22.12 or newer with npm, Python 3 and curl. macOS and Linux are supported.
 
 ```sh
-git clone https://github.com/lifeknife10A/order-matching-arbitrage-detector.git
-cd order-matching-arbitrage-detector
+git clone https://github.com/lifeknife10A/Cambio.git
+cd Cambio
 ./start-all.sh
 ```
 
@@ -147,7 +149,7 @@ The full evaluation is in [documentation/10_final_report.md](./documentation/10_
 ## Repository map
 
 ```
-order-matching-arbitrage-detector/
+Cambio/
 ├── README.md               this file
 ├── start-all.sh            whole system on one port (backend + dashboard + feed)
 ├── backend/                Java 17, plain javac: engine, structures, scanner, gateway, simulator

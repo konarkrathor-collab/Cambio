@@ -50,7 +50,7 @@ RECV_TIMEOUT_S = 0.25
 HTTP_TIMEOUT_S = 10
 # Frankfurter's CDN answers 403 to urllib's default "Python-urllib/x.y" agent (BUGS.md B5),
 # so every request names this program instead.
-USER_AGENT = "ads-feed/1.0 (+https://github.com/lifeknife10A/order-matching-arbitrage-detector)"
+USER_AGENT = "ads-feed/1.0 (+https://github.com/lifeknife10A/Cambio)"
 
 log = logging.getLogger("feed")
 

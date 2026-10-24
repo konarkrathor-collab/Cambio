@@ -1,6 +1,6 @@
 # Demo Script (10–12 minutes)
 
-A step-by-step live demonstration of v1.0.0. Each step says **what to click**, **what the audience should see** and **what to say**. Every number in "say" comes from a committed result in [results/](./results/README.md); the file is named next to it. Numbers the dashboard shows live will differ a little from machine to machine. Quote the committed ones, and point at the live ones as "this run".
+A step-by-step live demonstration of v1.1.0. Each step says **what to click**, **what the audience should see** and **what to say**. Every number in "say" comes from a committed result in [results/](./results/README.md); the file is named next to it. Numbers the dashboard shows live will differ a little from machine to machine. Quote the committed ones, and point at the live ones as "this run".
 
 ---
 

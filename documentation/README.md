@@ -9,7 +9,7 @@ Technical documentation for the **Advanced Data Structures (ADS – 702IT0E009)*
 * **Domain:** High-Throughput Financial Systems, Graph Optimization & Forex Arbitrage
 * **Institution:** SVKM's NMIMS MPSTME / STME
 * **Faculty In-Charge:** Prof. Ashwini Rao
-* **Release:** v1.0.0
+* **Release:** v1.1.0
 
 ---
 
