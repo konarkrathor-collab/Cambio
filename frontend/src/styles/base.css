@@ -269,7 +269,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .input:disabled { color: var(--text-faint); background: var(--surface-raised); border-color: var(--line-strong); }
 .input::placeholder { color: var(--text-faint); }
 .input[aria-invalid='true'] { border-color: var(--ask); }
-select.input { appearance: none; padding-right: var(--sp-6); background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%); background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%; background-size: 4px 4px; background-repeat: no-repeat; }
+select.input { font-family: var(--font-display); font-variant-numeric: tabular-nums; appearance: none; padding-right: var(--sp-6); background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%); background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%; background-size: 4px 4px; background-repeat: no-repeat; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3); }
 
 .segmented { flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: 0; }

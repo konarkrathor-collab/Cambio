@@ -1,0 +1,78 @@
+/* Simulator tab: the run form, the engine-versus-baseline result and the doc 04 targets. */
+
+.grid-sim {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.62fr) minmax(0, 1.5fr);
+  gap: var(--sp-2);
+  align-items: start;
+}
+@media (min-width: 1280px) and (min-height: 760px) {
+  .grid-sim { height: 100%; }
+  .grid-sim > .area-simresult { height: 100%; }
+}
+
+/* presets: a segmented row */
+.presets .btn-small { flex: 1 1 0; padding: var(--sp-1) var(--sp-2); font-family: var(--font-mono); font-size: var(--fs-label); }
+
+/* running: an indeterminate amber line under the header */
+.area-simresult { position: relative; }
+.sim-progress { position: absolute; left: 0; right: 0; top: var(--head-h); height: 2px; overflow: hidden; }
+.sim-progress::after { content: ''; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--accent); animation: scan 1s var(--ease-in-out) infinite; }
+.is-running .sim-results { opacity: 0.55; transition: opacity var(--dur-base) linear; }
+
+/* the summary strip: speedup in the headline size, bars that grow to their value */
+.sim-results > .muted.num { margin: var(--sp-1) 0 var(--sp-3); font-size: var(--fs-label); color: var(--text-faint); }
+.sim-hero {
+  display: grid;
+  grid-template-columns: minmax(180px, max-content) 1fr;
+  gap: var(--sp-6);
+  align-items: center;
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.sim-hero-value { margin: 0; font-size: 40px; line-height: 44px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.sim-hero-x { color: var(--accent); margin-left: 2px; }
+.sim-hero-caption { margin: var(--sp-1) 0 0; color: var(--text-muted); font-size: var(--fs-data); max-width: 18em; }
+.bars { display: grid; gap: var(--sp-2); }
+.bar-row { display: grid; grid-template-columns: 64px 1fr 120px; align-items: center; gap: var(--sp-3); font-size: var(--fs-data); }
+.bar-row > .num { text-align: right; color: var(--text-2); }
+.bar-label { color: var(--text-muted); font-size: var(--fs-label); font-stretch: 75%; font-weight: 600; letter-spacing: var(--track-label); text-transform: uppercase; }
+.bar-track { height: 10px; background: var(--surface-input); border-radius: var(--r-xs); overflow: hidden; }
+.bar { display: block; height: 100%; min-width: 2px; border-radius: var(--r-xs); transform-origin: left center; animation: bar-grow var(--dur-slow) var(--ease-out) both; }
+.bar-engine { background: var(--accent); }
+.bar-base { background: var(--text-faint); animation-delay: 80ms; }
+@keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* the comparison table */
+.sim-table td { text-align: right; }
+.sim-table tbody th { width: 34%; }
+.sim-table td strong { color: var(--text); font-size: var(--fs-ui); }
+
+/* doc 04 targets: met or missed, never hidden */
+.subhead {
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  font-weight: 600;
+  font-stretch: 75%;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: var(--sp-4) 0 var(--sp-2);
+}
+.targets { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--sp-1); font-size: var(--fs-data); line-height: var(--lh-data); }
+.targets li { padding: var(--sp-2) var(--sp-3); border-left: 2px solid var(--line-input); background: var(--surface-raised); border-radius: 0 var(--r-xs) var(--r-xs) 0; color: var(--text-2); }
+.targets li strong { font: 600 var(--fs-label) var(--font-mono); letter-spacing: 0.08em; margin-right: var(--sp-1); }
+.target-met { border-left-color: var(--bid) !important; }
+.target-met strong { color: var(--bid); }
+.target-missed { border-left-color: var(--ask) !important; }
+.target-missed strong { color: var(--ask); }
+.target-na strong { color: var(--text-muted); }
+.sim-results > p.muted:last-child { margin: var(--sp-3) 0 0; font-size: var(--fs-data); }
+
+@media (max-width: 1279px) {
+  .grid-sim { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); }
+  .sim-hero { grid-template-columns: 1fr; gap: var(--sp-3); }
+}

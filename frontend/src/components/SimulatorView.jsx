@@ -108,7 +108,8 @@ export default function SimulatorView() {
           Runs inside the server on an isolated engine: the live books, accounts and stream are not touched. Timings are measured inside the engine (no HTTP).
         </p>
       </Panel>
-      <Panel id="simresult" title="Engine vs naive baseline" className="area-simresult">
+      <Panel id="simresult" title="Engine vs naive baseline" meta={running ? 'running…' : null} className={`area-simresult${running ? ' is-running' : ''}`}>
+        {running ? <div className="sim-progress" aria-hidden="true" /> : null}
         {loadState === 'loading' ? <PanelState kind="loading">Loading the last result…</PanelState> : null}
         {loadState === 'none' && !result ? <PanelState kind="empty">No simulation has run since the server started.</PanelState> : null}
         {loadState === 'error' && !result ? <PanelState kind="error">{error}</PanelState> : null}
@@ -144,6 +145,25 @@ function Results({ r }) {
       <p className="muted num">
         {formatInt(r.numOrders)} orders · seed {r.seed} · profile {r.profile} · scan every {formatInt(r.scanEvery)} · volatility {r.rateVolatility}% · finished {formatTime(r.finishedAt)} UTC
       </p>
+      <div className="sim-hero" key={`${r.finishedAt}-${r.numOrders}`}>
+        <div className="sim-hero-figure">
+          {b ? (
+            <>
+              <p className="sim-hero-value num">{b.speedup}<span className="sim-hero-x">×</span></p>
+              <p className="sim-hero-caption">{Number(b.speedup) < 1 ? 'the naive baseline was faster on this run' : 'engine throughput over the naive baseline'}</p>
+            </>
+          ) : (
+            <>
+              <p className="sim-hero-value num">{formatInt(r.ordersPerSec)}</p>
+              <p className="sim-hero-caption">orders per second (baseline not run)</p>
+            </>
+          )}
+        </div>
+        <div className="bars" aria-hidden="true">
+          <div className="bar-row"><span className="bar-label">engine</span><span className="bar-track"><span className="bar bar-engine" style={{ width: `${(r.ordersPerSec / maxRate) * 100}%` }} /></span><span className="num">{formatInt(r.ordersPerSec)}/s</span></div>
+          {b ? <div className="bar-row"><span className="bar-label">baseline</span><span className="bar-track"><span className="bar bar-base" style={{ width: `${(b.ordersPerSec / maxRate) * 100}%` }} /></span><span className="num">{formatInt(b.ordersPerSec)}/s</span></div> : null}
+        </div>
+      </div>
       <table className="mini-table sim-table">
         <caption className="sr-only">Engine against the naive baseline</caption>
         <thead><tr><th scope="col">Measure</th><th scope="col" className="num">Engine</th><th scope="col" className="num">Naive baseline</th></tr></thead>
@@ -161,10 +181,6 @@ function Results({ r }) {
           ) : null}
         </tbody>
       </table>
-      <div className="bars" aria-hidden="true">
-        <div className="bar-row"><span className="bar-label">engine</span><span className="bar bar-engine" style={{ width: `${(r.ordersPerSec / maxRate) * 100}%` }} /><span className="num">{formatInt(r.ordersPerSec)}/s</span></div>
-        {b ? <div className="bar-row"><span className="bar-label">baseline</span><span className="bar bar-base" style={{ width: `${(b.ordersPerSec / maxRate) * 100}%` }} /><span className="num">{formatInt(b.ordersPerSec)}/s</span></div> : null}
-      </div>
       <h3 className="subhead">Doc 04 targets</h3>
       <ul className="targets">
         {targets.map((t) => (

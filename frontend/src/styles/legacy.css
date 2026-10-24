@@ -6,26 +6,8 @@
   --cycle: var(--accent); --mono: var(--font-mono); --sans: var(--font-display);
   --ask-bar: var(--ask-tint); --bid-bar: var(--bid-tint);
 }
-.grid-sim { display: grid; grid-template-columns: minmax(340px, 0.8fr) minmax(560px, 1.5fr); gap: 10px; align-items: start; }
 .grid-insp { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
 .grid-insp > .note { grid-column: 1 / -1; }
-
-/* simulator */
-.subhead { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 12px 0 4px; }
-.bars { margin-top: 10px; display: grid; gap: 4px; }
-.bar-row { display: grid; grid-template-columns: 70px 1fr 130px; align-items: center; gap: 8px; }
-.bar-row .bar { height: 10px; border-radius: 2px; min-width: 2px; }
-.bar-row > .bar { justify-self: start; }
-.bar-engine { background: var(--accent); }
-.bar-base { background: #8b98a6; }
-.bar-label { color: var(--muted); }
-.targets { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
-.targets li { padding: 4px 8px; border-left: 3px solid var(--line); background: var(--panel-2); }
-.target-met { border-left-color: var(--bid) !important; }
-.target-met strong { color: var(--bid); }
-.target-missed { border-left-color: var(--ask) !important; }
-.target-missed strong { color: var(--ask); }
-.target-na strong { color: var(--muted); }
 
 /* inspector */
 .tree { margin: 0 0 8px; }
@@ -46,7 +28,6 @@
 
 /* 1024-1279 px (a classroom projector): two columns, nothing clipped, no horizontal scroll */
 @media (max-width: 1279px) {
-  .grid-sim { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); }
   .demo-body { grid-template-columns: 1fr; }
 }
 
