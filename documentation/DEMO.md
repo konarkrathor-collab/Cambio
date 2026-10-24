@@ -14,10 +14,12 @@ A step-by-step live demonstration of v1.0.0. Each step says **what to click**, *
    Wait for the line `Dashboard and API:  http://127.0.0.1:8080`.
    - With no key, `start-all.sh` replays the committed real capture, so the demo does not depend on the forex market being open or on the network.
    - The DEMO drawer's **Inject loophole** button is disabled while the badge says LIVE, so a demo injection never mixes with live data (backend/BUGS.md F3).
-2. Open **http://127.0.0.1:8080** in a browser window at least **1280 px wide**. 1024 × 768 also works, with two columns.
+2. Open **http://127.0.0.1:8080/#/demo** in a browser window at least **1280 px wide**. 1024 × 768 also works, with two columns. This is the terminal-style demo dashboard that the steps below describe. The consumer app, **Cambio**, is at **http://127.0.0.1:8080** (see the opener below).
 3. Leave the terminal visible on a second screen if you can. It is part of step 8.
 
 To rehearse, `node frontend/e2e/demo-script.mjs` clicks through steps 1–7 in a headless browser against `start-all.sh` and checks each "audience sees" item. It needs Playwright; see [frontend/README.md](../frontend/README.md).
+
+**Optional two-minute opener in Cambio (http://127.0.0.1:8080).** Show Markets (live prices, the practice balance), click a pair to open Trade, press **Add practice orders** if the book is empty, buy a few at "Best price now" and watch the balance change, then open Opportunities and press **Show an example loop** and **Try it on paper**. Say: "This is what a user sees. Everything underneath is the engine and scanner I am about to open up." Then switch to `#/demo` for step 1. Switching between the two reloads the page.
 
 If something goes wrong mid-demo, `Ctrl-C` in the terminal and `./start-all.sh` again. The second start skips the builds.
 

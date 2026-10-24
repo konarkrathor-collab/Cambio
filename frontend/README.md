@@ -1,4 +1,13 @@
-# Dashboard (Stage 5, redesigned in Stage 8)
+# Frontend: Cambio (consumer app) and the demo dashboard
+
+Two front ends share one runtime (store, API client, event stream in `src/app/` and `src/lib/`):
+
+- **Cambio**, at `/` (hash routes `#/markets`, `#/trade`, `#/portfolio`, `#/opportunities`), in `src/consumer/`. Designed in [design/](./design/visual-direction.md) (visual direction, tokens, product requirements) and audited in [design/audit-2026-10-24.md](./design/audit-2026-10-24.md). Light, ink-only, self-hosted Hanken Grotesk and Geist (SIL OFL). Nothing here talks to the backend beyond the frozen contract.
+- **The demo dashboard**, at `#/demo`, described below (built in Stage 5, redesigned in Stage 8). Its stylesheets are global, so moving between the two reloads the page.
+
+Browser checks: `e2e/cambio.mjs` (Cambio), `e2e/demo-script.mjs` and `e2e/golden-path.mjs` (demo dashboard). All three load Playwright through `e2e/pw.mjs`, which honours `PLAYWRIGHT_MODULE` (a path to playwright or playwright-core) and `CHROMIUM_PATH` (a browser binary) when the installed browser does not match the Playwright version.
+
+## The demo dashboard (Stage 5, redesigned in Stage 8)
 
 A React dashboard for the backend: order book, order ticket, trades and accounts; the
 currency graph with the detected cycle; the simulator; the structure inspector; and

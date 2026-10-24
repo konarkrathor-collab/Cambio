@@ -15,7 +15,10 @@ A trading-exchange simulator and forex loophole scanner. Every data structure on
    - A **trie** for pair lookup and autocomplete.
    - **Huffman coding** for the trade archive.
 4. **Market data feed (Python).** Streams real forex ticks from Finnhub, falls back to the Frankfurter daily snapshot, or replays a recorded capture. It only fetches and forwards; all computation is in Java.
-5. **Dashboard (React + d3).** Order book ladder and depth chart, order entry, the currency graph with the loophole glowing, an engine-versus-naive simulator and a structure inspector. Live updates arrive by Server-Sent Events.
+5. **Two front ends (React + d3), one backend.**
+   - **Cambio**, the consumer app at `/`: Markets, Trade (price and depth charts, order book, a plain-language order ticket), Portfolio, and Opportunities (the loophole map, with a paper run of the loop). It shows no data-source jargon. Design in [frontend/design/](./frontend/design/visual-direction.md).
+   - **The demo dashboard** at `/#/demo`: the terminal-style view with the structure inspector, the engine-versus-naive simulator and the demo drawer, for explaining how it works.
+   Live updates arrive by Server-Sent Events.
 
 Each structure was chosen by building and measuring the alternatives first. Measurement replaced one pick: the price ladder was planned as a radix tree and is a B+ tree. The evidence is in [documentation/05](./documentation/05_data_structure_selection_rationale.md) and [benchmark/results/RESULTS.md](./benchmark/results/RESULTS.md).
 
@@ -24,7 +27,7 @@ Each structure was chosen by building and measuring the alternatives first. Meas
 ## Architecture
 
 ```
-  Browser: React dashboard (Market | Arbitrage | Simulator | Inspector | DEMO)
+  Browser: Cambio (Markets | Trade | Portfolio | Opportunities)  or  demo dashboard (#/demo)
         |  REST (fetch)                         ^  Server-Sent Events: BOOK_UPDATE,
         v                                       |  TRADE, LOOPHOLE_ALERT, RATE_TICK
  +-----------------------------------------------------------------------------+
@@ -55,10 +58,10 @@ cd order-matching-arbitrage-detector
 ./start-all.sh
 ```
 
-Then open **http://127.0.0.1:8080**. The first start builds the backend and the dashboard and creates the feed's virtual environment, which takes a minute or two. `Ctrl-C` stops everything.
+Then open **http://127.0.0.1:8080** for Cambio, or **http://127.0.0.1:8080/#/demo** for the terminal-style demo dashboard. The first start builds the backend and the dashboard and creates the feed's virtual environment, which takes a minute or two. `Ctrl-C` stops everything.
 
-- **Without** `FINNHUB_API_KEY` in the environment, the feed replays the committed real capture (`feed/samples/finnhub_ticks_2026-10-23.jsonl`), and the badge says **REPLAY**, never LIVE.
-- **With** the key set, the feed is live. Either export `FINNHUB_API_KEY`, or copy `.env.example` to `.env` (git-ignored) and put the key there; `start-all.sh` reads it. Forex markets close at weekends, and then the badge says WAITING ("connected, no ticks").
+- **Without** `FINNHUB_API_KEY` in the environment, the feed replays the committed real capture (`feed/samples/finnhub_ticks_2026-10-23.jsonl`), and the demo dashboard's badge says **REPLAY**, never LIVE. `FINNHUB_API_KEY= ./start-all.sh` (an empty value) forces replay even when a `.env` file holds a key. Cambio itself shows no source badge, only a quiet "Prices paused" line when quotes are stale.
+- **With** the key set, the feed is live. Either export `FINNHUB_API_KEY`, or copy `.env.example` to `.env` (git-ignored) and put the key there; `start-all.sh` reads it. Forex markets close at weekends, and then the demo dashboard's badge says WAITING ("connected, no ticks") and Cambio says prices are paused.
 - `PORT=9000 ./start-all.sh` uses another port.
 - A guided 10–12 minute walkthrough is in [documentation/DEMO.md](./documentation/DEMO.md).
 
@@ -72,7 +75,7 @@ Then open **http://127.0.0.1:8080**. The first start builds the backend and the 
 | :--- | :--- | :--- |
 | Backend suite | `backend/test.sh` | 207 tests: the six structures against the benchmark's own oracles, the matching rules, the API, crash safety, static file serving with every path-traversal attempt |
 | Feed suite | `feed/test.sh` | Reconnect and backoff, fallback, replay, malformed input, the API key never logged |
-| Frontend | `cd frontend && npm ci && npm test && npm run build` | 124 tests: API wrapper, reducers, formatting, depth maths, order validation, a recorded stream replayed, the error boundary |
+| Frontend | `cd frontend && npm ci && npm test && npm run build` | 139 tests: API wrapper, reducers, formatting, depth maths, order validation, a recorded stream replayed, the error boundary |
 | Smoke | `backend/scripts/smoke.sh` | Every endpoint once, curl only |
 | Replay gate | `feed/replay_check.sh` | The real capture replays end to end |
 | End to end | `scripts/e2e.sh` | Orders, cancels, a loophole and both simulator profiles against a real backend and feed; balances recomputed from the trade list |
@@ -84,9 +87,12 @@ Then open **http://127.0.0.1:8080**. The first start builds the backend and the 
 | Drill 5 | `scripts/drill_sse.sh` | 32 event streams, a client that never reads, a reconnect loop: order latency stays flat |
 | Links | `python3 scripts/check_links.py` | Every relative link and anchor in every Markdown file |
 
-Two checks are outside verify-all:
+Four checks are outside verify-all:
 * `scripts/soak.sh` (drill 6, about 11 minutes): steady load, with heap, threads and file descriptors watched for growth.
-* `frontend/e2e/golden-path.mjs`: a headless-browser golden path, which needs Playwright (see [frontend/README.md](./frontend/README.md)).
+* `frontend/e2e/cambio.mjs`: Cambio end to end in a headless browser (36 checks: Markets, a trade, the portfolio, a loop, reduced motion, no console output).
+* `frontend/e2e/demo-script.mjs` and `frontend/e2e/golden-path.mjs`: the demo dashboard (42 and 50 checks).
+
+The three browser scripts need Playwright (see [frontend/README.md](./frontend/README.md)).
 
 Details for each script: [scripts/README.md](./scripts/README.md).
 
@@ -154,7 +160,7 @@ order-matching-arbitrage-detector/
 │   ├── feed.py             Finnhub WebSocket, Frankfurter fallback, --replay
 │   ├── samples/            the committed real capture (2026-10-23)
 │   └── tests/              feed suite; fake_finnhub.py is the test socket server
-├── frontend/               React + Vite + d3 dashboard; e2e/golden-path.mjs
+├── frontend/               React + Vite + d3: Cambio (src/consumer), the demo dashboard, design/ docs, e2e/
 ├── scripts/                verify-all.sh, the drills, fuzz, soak, load generator, link checker
 ├── benchmark/              the benchmark lab: every candidate structure, oracle-gated
 │   └── results/RESULTS.md  evidence log, Runs 1–15
