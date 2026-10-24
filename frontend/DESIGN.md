@@ -68,7 +68,12 @@ The neutral ramp is cool graphite. Contrast is measured against `--surface-panel
    - data that is not live: REPLAY, FALLBACK, stale, and everything in the DEMO drawer.
 
    LIVE is drawn in solid neutral, so the two can never be confused, and each badge carries its word.
-3. **No decorative gradients.** The only gradients draw data: the depth bar behind each book row is a hard-stop fill proportional to cumulative volume.
+3. **No decorative gradients.** Every gradient in the code draws something specific:
+   - the depth bar behind each book row, a hard-stop fill proportional to cumulative volume;
+   - the diagonal amber hatch that marks data which is not live, on the REPLAY/FALLBACK badge and the DEMO drawer's top edge;
+   - the select chevron, two hard-stop triangles.
+
+   There are no colour fades.
 4. **Colour is never the only signal.** Every coloured thing also has a word or a shape: ASK/BID, BUY/SELL, MET/MISSED, ✓/✗, FOUND/CLEARED, the badge text.
 
 ---
