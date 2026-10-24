@@ -4,6 +4,7 @@ import { splitBalance, usePracticeAccount } from './practice.js';
 import MarketsScreen from './MarketsScreen.jsx';
 import TradeScreen from './TradeScreen.jsx';
 import OpportunitiesScreen from './OpportunitiesScreen.jsx';
+import PortfolioScreen from './PortfolioScreen.jsx';
 
 function Mark() {
   return (
@@ -26,21 +27,10 @@ function PracticeChip() {
   );
 }
 
-function ComingNext({ title }) {
-  return (
-    <div className="screen">
-      <section className="card list-card">
-        <h1 className="display">{title}</h1>
-        <p className="empty">This screen is being built next.</p>
-      </section>
-    </div>
-  );
-}
-
 const VIEWS = {
   markets: MarketsScreen,
   trade: TradeScreen,
-  portfolio: () => <ComingNext title="Portfolio" />,
+  portfolio: PortfolioScreen,
   opportunities: OpportunitiesScreen,
 };
 
