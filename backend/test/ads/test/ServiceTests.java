@@ -37,6 +37,9 @@ final class ServiceTests {
       r.check("132 pairs with dense ids; lookups, prefixes, tick sizes", ServiceTests::directory);
 
       r.section("vault: accounts in backend/data/accounts.jsonl style files");
+      r.check("the loader refuses a file outside the bounds (margin > 10^15, |cash| > 10^18,"
+          + " total > 10^18, more than 1,000 accounts) and accepts the edges",
+          () -> vaultBounds(tmp.resolve("vbounds")));
       r.check("flush then reopen (in-process restart) restores every account",
           () -> vaultRestart(tmp.resolve("v1")));
       r.check("restart in a NEW JVM: run.sh accounts reads back the balances",
@@ -106,6 +109,57 @@ final class ServiceTests {
   }
 
   // ---------------------------------------------------------------- vault
+
+  private static TestRunner.Result vaultBounds(Path dir) throws IOException {
+    Files.createDirectories(dir);
+    long m = Vault.MAX_OPENING_AMOUNT;
+    long b = Vault.MAX_BALANCE;
+    String[][] bad = {
+        {"margin", "{\"traderId\":1,\"cash\":0,\"marginLimit\":" + (m + 1) + "}"},
+        {"cash high", "{\"traderId\":1,\"cash\":" + (b + 1) + ",\"marginLimit\":0}"},
+        {"cash low", "{\"traderId\":1,\"cash\":" + (-b - 1) + ",\"marginLimit\":0}"},
+        {"total", "{\"traderId\":1,\"cash\":" + (b / 2 + 1) + ",\"marginLimit\":0}\n"
+            + "{\"traderId\":2,\"cash\":" + (b / 2) + ",\"marginLimit\":0}"},
+    };
+    StringBuilder problems = new StringBuilder();
+    for (String[] c : bad) {
+      Path f = dir.resolve(c[0].replace(' ', '_') + ".jsonl");
+      Files.writeString(f, c[1] + "\n");
+      try {
+        new Vault(f, 64);
+        problems.append(c[0]).append(" accepted; ");
+      } catch (IOException expected) {
+        // refused, as it must be
+      }
+    }
+    StringBuilder many = new StringBuilder();
+    for (int i = 1; i <= Vault.MAX_ACCOUNTS + 1; i++) {
+      many.append("{\"traderId\":").append(i).append(",\"cash\":1,\"marginLimit\":1}\n");
+    }
+    Path tooMany = dir.resolve("too_many.jsonl");
+    Files.writeString(tooMany, many);
+    try {
+      new Vault(tooMany, 64);
+      problems.append("1,001 accounts accepted; ");
+    } catch (IOException expected) {
+      // refused
+    }
+    // the edges load: exactly 1,000 accounts, margin 10^15, one balance at +10^18 offset by a
+    // negative one (the total stays 10^18 at most)
+    StringBuilder edge = new StringBuilder();
+    edge.append("{\"traderId\":1,\"cash\":").append(b).append(",\"marginLimit\":").append(m).append("}\n");
+    edge.append("{\"traderId\":2,\"cash\":").append(-b + 5).append(",\"marginLimit\":0}\n");
+    for (int i = 3; i <= Vault.MAX_ACCOUNTS; i++) {
+      edge.append("{\"traderId\":").append(i).append(",\"cash\":1,\"marginLimit\":1}\n");
+    }
+    Path ok = dir.resolve("edges.jsonl");
+    Files.writeString(ok, edge);
+    Vault v = new Vault(ok, 64);
+    if (v.size() != Vault.MAX_ACCOUNTS) problems.append("edges: ").append(v.size()).append(" loaded; ");
+    return problems.length() == 0
+        ? TestRunner.Result.pass("5 out-of-bounds files refused; 1,000 accounts at the edges loaded")
+        : TestRunner.Result.fail(problems.toString());
+  }
 
   private static TestRunner.Result vaultRestart(Path dir) throws IOException {
     Path file = dir.resolve("accounts.jsonl");

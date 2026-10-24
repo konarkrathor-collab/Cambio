@@ -29,6 +29,16 @@ import java.nio.file.StandardOpenOption;
  */
 public final class Vault {
   public static final int DEFAULT_CACHE_CAPACITY = 1_024;
+  /**
+   * Bounds that keep every balance far from the range of a long (Stage 6 addendum): the API
+   * opens at most {@link #MAX_ACCOUNTS} accounts with cash and margin of at most
+   * {@link #MAX_OPENING_AMOUNT}, so total cash never exceeds 10^18. Trading moves cash between
+   * accounts (one balance may pass 10^15) but never changes the total.
+   */
+  public static final long MAX_OPENING_AMOUNT = 1_000_000_000_000_000L;
+  public static final int MAX_ACCOUNTS = 1_000;
+  /** The largest balance, in either direction, and the largest total an accounts file may hold. */
+  public static final long MAX_BALANCE = 1_000_000_000_000_000_000L;
 
   private final Path file;
   private final LruCache<Account> cache;
@@ -190,6 +200,7 @@ public final class Vault {
   }
 
   private void load() throws IOException {
+    long total = 0;
     try (BufferedReader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
       String line;
       int lineNo = 0;
@@ -205,8 +216,25 @@ public final class Vault {
         if (f[2] < 0) {
           throw new IOException(file + ":" + lineNo + ": negative marginLimit");
         }
+        if (f[2] > MAX_OPENING_AMOUNT) {
+          throw new IOException(file + ":" + lineNo + ": marginLimit above " + MAX_OPENING_AMOUNT);
+        }
+        if (f[1] > MAX_BALANCE || f[1] < -MAX_BALANCE) {
+          throw new IOException(file + ":" + lineNo + ": cash outside +-" + MAX_BALANCE);
+        }
+        if (count >= MAX_ACCOUNTS) {
+          throw new IOException(file + ":" + lineNo + ": more than " + MAX_ACCOUNTS + " accounts");
+        }
+        try {
+          total = Math.addExact(total, f[1]);
+        } catch (ArithmeticException e) {
+          throw new IOException(file + ":" + lineNo + ": total cash outside the range of a long");
+        }
         ledgerPut(new Account(f[0], f[1], f[2]));
       }
+    }
+    if (total > MAX_BALANCE) {
+      throw new IOException(file + ": total cash " + total + " above " + MAX_BALANCE);
     }
     dirty = false;
   }

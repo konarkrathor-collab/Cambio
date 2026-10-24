@@ -163,9 +163,11 @@ public final class App {
     simulations.shutdown();
     try {
       thread.call(() -> {
+        // the same order as every flush (B13): trades, then balances; if the trades cannot be
+        // written the balances are not either, so the files on disk stay consistent
+        logbook.rotate();
         vault.flush();
         counters.write(engine.nextOrderId(), engine.nextTradeId(), engine.sequence(), true);
-        logbook.rotate();
         return null;
       });
     } catch (Exception e) {
@@ -422,6 +424,9 @@ public final class App {
     long margin = requiredLong(m, "marginLimit");
     if (trader <= 0) throw badRequest("traderId must be positive");
     if (cash < 0 || margin < 0) throw badRequest("cash and marginLimit must be >= 0");
+    if (cash > Vault.MAX_OPENING_AMOUNT || margin > Vault.MAX_OPENING_AMOUNT) {
+      throw badRequest("cash and marginLimit must be at most 1000000000000000 (10^15)");
+    }
     return new long[] { trader, cash, margin };
   }
 
@@ -671,6 +676,9 @@ public final class App {
   private ApiServer.Response createAccount(long[] a) throws ApiException, IOException {
     if (vault.account(a[0]) != null) {
       throw new ApiException(409, "ACCOUNT_EXISTS", "account " + a[0] + " already exists");
+    }
+    if (vault.size() >= Vault.MAX_ACCOUNTS) {
+      throw new ApiException(400, "BAD_REQUEST", "at most " + Vault.MAX_ACCOUNTS + " accounts");
     }
     Account created = vault.open(a[0], a[1], a[2]);
     vault.flush(); // accounts survive a restart from the moment they exist

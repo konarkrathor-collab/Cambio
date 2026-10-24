@@ -53,7 +53,7 @@ class Stats:
             self.codes[code] = self.codes.get(code, 0) + 1
             if elapsed > self.slowest:
                 self.slowest, self.slowest_label = elapsed, label
-            if code == 500 or code == "TIMEOUT" or code == "DEAD":
+            if code in (500, "TIMEOUT", "DEAD", "BOUND"):
                 if len(self.failures) < 20:
                     self.failures.append(f"{code} on {label}")
 
@@ -281,18 +281,23 @@ def race(base, stats, seed, threads=8, rounds=200):
 
 
 def huge_balances(base, stats, seed):
-    """Accounts with balances near the 64-bit limit trade as makers and takers (B14)."""
+    """Balance bounds (Stage 6 addendum, B14): an account above 10^15 must be refused with
+    400; accounts opened at exactly 10^15 then trade as makers and takers at high prices."""
     r = random.Random(seed)
     c = Client(base, stats)
     big = []
+    for k, cash in enumerate([2 ** 63 - 1, 10 ** 18, 10 ** 15 + 1]):
+        st, _ = c.send("POST", "/api/accounts", {"traderId": 9_100_000 + seed * 10 + k, "cash": cash,
+                                                 "marginLimit": 10 ** 15}, label="over-bound account")
+        if st != 400:
+            stats.record(f"over-bound account accepted with {st}", "BOUND", 0)
     for k in range(6):
         tid = 9_000_000 + seed * 10 + k
-        cash = r.choice([2 ** 63 - 1, 2 ** 63 - 10 ** 10, 2 ** 63 - 10 ** 18, 2 ** 62, 10 ** 18])
-        st, _ = c.send("POST", "/api/accounts", {"traderId": tid, "cash": cash, "marginLimit": 2 ** 63 - 1},
-                       label="huge account")
+        st, _ = c.send("POST", "/api/accounts", {"traderId": tid, "cash": 10 ** 15, "marginLimit": 10 ** 15},
+                       label="max account")
         if st == 201:
             with stats.lock:
-                stats.created_cash += cash
+                stats.created_cash += 10 ** 15
             big.append(tid)
     for i in range(300):
         rich = r.choice(big)
@@ -301,16 +306,16 @@ def huge_balances(base, stats, seed):
         qty = r.randint(1, 10)
         if r.random() < 0.5:  # the rich account rests, a normal one crosses
             c.send("POST", "/api/orders", {"traderId": rich, "pair": "EUR/USD", "side": "SELL", "type": "LIMIT",
-                                           "price": px, "quantity": qty}, label="huge maker")
+                                           "price": px, "quantity": qty}, label="max maker")
             c.send("POST", "/api/orders", {"traderId": normal, "pair": "EUR/USD", "side": "BUY",
                                            "type": r.choice(["LIMIT", "MARKET"]), "price": px, "quantity": qty},
-                   label="cross a huge maker")
+                   label="cross a max maker")
         else:  # a normal account rests, the rich one crosses
             c.send("POST", "/api/orders", {"traderId": normal, "pair": "EUR/USD", "side": "BUY", "type": "LIMIT",
                                            "price": "1.08500", "quantity": qty}, label="normal maker")
             c.send("POST", "/api/orders", {"traderId": rich, "pair": "EUR/USD", "side": r.choice(["SELL", "BUY"]),
                                            "type": r.choice(["LIMIT", "MARKET"]), "price": "1.08500", "quantity": qty},
-                   label="huge taker")
+                   label="max taker")
     return len(big)
 
 
@@ -356,12 +361,13 @@ def main():
     print(f"  status codes: {dict(sorted(stats.codes.items(), key=lambda kv: str(kv[0])))}")
     print(f"  race: {placed} resting orders, {sum(stats.cancel_ok.values())} successful cancels, "
           f"{len(double)} orders cancelled twice")
-    print(f"  huge balances: {rich} accounts near the 64-bit limit traded 600 orders")
+    print(f"  balance bounds: 3 over-bound accounts refused (400); {rich} accounts at 10^15 traded 600 orders")
     print(f"  cash: start {cash0} + created {stats.created_cash} = {cash0 + stats.created_cash}, end {cash1}")
     ok = True
     for name, cond in [("no 500", stats.codes.get(500, 0) == 0), ("no hang", stats.codes.get("TIMEOUT", 0) == 0),
                        ("never dead", stats.codes.get("DEAD", 0) == 0), ("alive at the end", alive),
-                       ("cash conserved", cash1 == cash0 + stats.created_cash), ("no double cancel", not double)]:
+                       ("cash conserved", cash1 == cash0 + stats.created_cash), ("no double cancel", not double),
+                       ("account bounds enforced", stats.codes.get("BOUND", 0) == 0)]:
         print(f"{'PASS' if cond else 'FAIL'}  {name}")
         ok = ok and cond
     for f in stats.failures:

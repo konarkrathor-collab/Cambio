@@ -137,7 +137,7 @@ Status fields:
 
 ### 3.9 Accounts
 
-`GET /api/accounts` returns `{count, accounts: [{traderId, cash, marginLimit}]}` in creation order. `GET /api/accounts/{traderId}` returns one account. `POST /api/accounts` takes `{traderId > 0, cash >= 0, marginLimit >= 0}` (integers, no other fields) and returns **201** with the account, or 409 if it exists. Accounts are written to `<data-dir>/accounts.jsonl` immediately on creation, within 2 s of any balance change, and on shutdown, so they survive a restart. `--seed-demo-accounts` creates the demo's 12 traders when the file is empty: ids 1–11 with cash 5,000,000,000 and margin 3,000,000,000, and trader 12 with 2,000,000 of each.
+`GET /api/accounts` returns `{count, accounts: [{traderId, cash, marginLimit}]}` in creation order. `GET /api/accounts/{traderId}` returns one account. `POST /api/accounts` takes `{traderId > 0, 0 <= cash <= 10^15, 0 <= marginLimit <= 10^15}` (integers, no other fields) and returns **201** with the account, or 409 if it exists. A `cash` or `marginLimit` above 10^15 (1,000,000,000,000,000) is **400 `BAD_REQUEST`**, and so is creating an account when 1,000 already exist. With at most 1,000 accounts opened with at most 10^15 each, total cash can never exceed 10^18, so no balance can leave the range of a 64-bit integer: trades move cash between accounts but never change the total (Stage 6 addendum; see the change log). A server refuses to start with an accounts file that breaks the bounds: a margin limit above 10^15, a balance outside ±10^18, total cash above 10^18, or more than 1,000 accounts. Accounts are written to `<data-dir>/accounts.jsonl` immediately on creation, within 2 s of any balance change, and on shutdown, so they survive a restart. `--seed-demo-accounts` creates the demo's 12 traders when the file is empty: ids 1–11 with cash 5,000,000,000 and margin 3,000,000,000, and trader 12 with 2,000,000 of each.
 
 ### 3.10 `GET /api/health`
 
@@ -212,6 +212,18 @@ Server-Sent Events (`text/event-stream`; use `new EventSource("/api/stream")`). 
 ## 6. Stage 2 payloads (unchanged)
 
 Doc 08 Appendix B, plus the optional `replay` flag (§3.7).
+
+## 6a. Change log
+
+The contract was frozen at the Stage 3 acceptance (2026-10-24). Every later change was approved by the supervisor before it was made:
+
+| Stage | Change | Kind |
+| :--- | :--- | :--- |
+| Stage 3 addendum | `GET /api/trades`; order ids, trade ids and `seq` continue across restarts (§3.11, §5) | Additive |
+| Stage 4 | `POST /api/simulate` and `GET /api/simulate/last` (§3.12, §3.13); 501 `NOT_IMPLEMENTED` no longer returned | Additive |
+| Stage 4 addendum | `profile`; `finalCash`, `finalCashTotal`, `tradesMatch` and `cashMatch`; the 200,000-order cap for deep runs with the baseline (§3.12) | Additive |
+| Stage 6 | `hasSimulation` in `GET /api/health` (§3.10) | Additive |
+| Stage 6 addendum | `POST /api/accounts` limits `cash` and `marginLimit` to 10^15 and the server to 1,000 accounts, 400 otherwise (§3.9). Approved by the supervisor in doc 08's Stage 6 addendum, because unbounded balances made the B14 overflow reachable (`backend/BUGS.md`). | **A deliberate narrowing**: requests that were accepted before are now refused |
 
 ## 7. Captured examples
 

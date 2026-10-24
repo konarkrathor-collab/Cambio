@@ -76,10 +76,14 @@ final class GatewayTests {
     r.check("Logbook loss window bounded by time: a crash loses at most the last flush period"
         + " (300 ms here, 5 s by default); without the timer the same crash loses every trade",
         GatewayTests::logbookTimedFlush);
+    r.check("B13 fault injection: when the Logbook cannot be written, the accounts file is not"
+        + " written either (periodic flush and shutdown)", GatewayTests::logbookFailureKeepsAccounts);
     r.check("after a crash, persisted balances never include a trade the archive lacks (B13)",
         GatewayTests::balancesMatchArchive);
     r.check("B15: a 3 MB body uploaded in pieces always gets its 413 (30 tries), never a connection reset",
         () -> withApp(GatewayTests::oversizedAlways413));
+    r.check("POST /api/accounts: cash and marginLimit at most 10^15, at most 1,000 accounts"
+        + " (400 BAD_REQUEST); a duplicate is still 409", () -> withApp(GatewayTests::accountBounds));
     r.check("GET /api/trades: newest first, pair filter, limit 1-500, ring of 500",
         () -> withApp(GatewayTests::recentTrades));
   }
@@ -145,6 +149,51 @@ final class GatewayTests {
     check(untimed[1] == 0, "control: without the timer the snapshot should hold no trades, got " + untimed[1]);
     return TestRunner.Result.pass(timed[0] + " trades, 700 ms before the crash: " + timed[1]
         + " archived with the timer, " + untimed[1] + " without");
+  }
+
+  /**
+   * The Logbook's directory is replaced by a plain file, so every segment write fails (this
+   * works even as root, where permissions would not stop a write). Trades then make the Vault
+   * dirty; neither the periodic flush (every 100 ms here) nor the shutdown may write the
+   * accounts file while their trades cannot be archived.
+   */
+  private static TestRunner.Result logbookFailureKeepsAccounts() throws Exception {
+    Path dir = Files.createTempDirectory("ads-gw-b13-");
+    App.Config cfg = new App.Config();
+    cfg.port = 0;
+    cfg.dataDir = dir;
+    cfg.seedDemoAccounts = true;
+    cfg.flushIntervalMs = 100;
+    cfg.logbookFlushMs = 3_600_000;
+    App app = App.start(cfg);
+    boolean stopped = false;
+    try {
+      Client c = new Client(app);
+      Path accounts = dir.resolve("accounts.jsonl");
+      Path logbook = dir.resolve("logbook");
+      byte[] before = Files.readAllBytes(accounts);
+      deleteTree(logbook);
+      Files.writeString(logbook, "not a directory");
+      int trades = 0;
+      for (int i = 0; i < 5; i++) {
+        c.order(1 + i, "EUR/USD", "SELL", "LIMIT", "1.08500", 3);
+        trades += ((List<?>) c.order(7 + i % 4, "EUR/USD", "BUY", "LIMIT", "1.08500", 3).get("trades")).size();
+      }
+      check(trades == 5, "5 trades expected, got " + trades);
+      check(c.cash(7) != 5_000_000_000L, "the trades moved cash in memory");
+      Thread.sleep(600); // about six periodic flush attempts, each failing at the Logbook
+      check(java.util.Arrays.equals(before, Files.readAllBytes(accounts)),
+          "the accounts file was written although its trades could not be archived");
+      app.stop();
+      stopped = true;
+      check(java.util.Arrays.equals(before, Files.readAllBytes(accounts)),
+          "shutdown wrote the accounts file although its trades could not be archived");
+      return TestRunner.Result.pass(trades + " trades unarchivable: accounts file unchanged through 6"
+          + " periodic flushes and the shutdown");
+    } finally {
+      if (!stopped) app.stop();
+      deleteTree(dir);
+    }
   }
 
   private static TestRunner.Result balancesMatchArchive() throws Exception {
@@ -258,6 +307,29 @@ final class GatewayTests {
     check(ok == 30, ok + " of 30 uploads got the 413; last other outcome: " + other);
     check(c.json("GET", "/api/health", null, 200).get("status").equals("ok"), "alive");
     return TestRunner.Result.pass("30 of 30 three-megabyte uploads answered 413 BODY_TOO_LARGE");
+  }
+
+  private static TestRunner.Result accountBounds(Client c) throws Exception {
+    String max = "1000000000000000";
+    String over = "1000000000000001";
+    c.json("POST", "/api/accounts", "{\"traderId\":5000,\"cash\":" + max + ",\"marginLimit\":" + max + "}", 201);
+    for (String body : new String[] {
+        "{\"traderId\":5001,\"cash\":" + over + ",\"marginLimit\":1}",
+        "{\"traderId\":5002,\"cash\":1,\"marginLimit\":" + over + "}",
+        "{\"traderId\":5003,\"cash\":9223372036854775807,\"marginLimit\":1}"}) {
+      HttpResponse<String> r = c.send("POST", "/api/accounts", body);
+      check(c.errorCode(r).equals("400 BAD_REQUEST") && r.body().contains("10^15"), body + " -> " + r.body());
+    }
+    long existing = (Long) c.json("GET", "/api/accounts", null, 200).get("count");
+    for (long id = 6000; existing < 1_000; id++, existing++) {
+      c.json("POST", "/api/accounts", "{\"traderId\":" + id + ",\"cash\":1,\"marginLimit\":1}", 201);
+    }
+    HttpResponse<String> full = c.send("POST", "/api/accounts", "{\"traderId\":9999,\"cash\":1,\"marginLimit\":1}");
+    check(c.errorCode(full).equals("400 BAD_REQUEST") && full.body().contains("1000 accounts"), "1,001st: " + full.body());
+    check(c.errorCode(c.send("POST", "/api/accounts", "{\"traderId\":5000,\"cash\":1,\"marginLimit\":1}"))
+        .equals("409 ACCOUNT_EXISTS"), "duplicate");
+    check(((Long) c.json("GET", "/api/accounts", null, 200).get("count")) == 1_000, "count stays 1,000");
+    return TestRunner.Result.pass("10^15 accepted, 10^15 + 1 refused; 1,000 accounts, the 1,001st refused");
   }
 
   /** startApp with a flush interval and, if positive, a counter reserve. */
