@@ -79,26 +79,27 @@ export default function CurrencyGraph({ graph, cycle }) {
         if (pos[cycle[i]] && pos[cycle[i + 1]]) legs.push({ from: cycle[i], to: cycle[i + 1], i });
       }
     }
-    svg.select('g.cycle')
+    // a leg ends just short of the next node, so its arrowhead stays visible
+    const end = (d, k) => {
+      const a = pos[d.from];
+      const b = pos[d.to];
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      return b[k] - ((b[k] - a[k]) / len) * (R + 4);
+    };
+    const drawLegs = (group, cls, marker) => svg.select(group)
       .selectAll('line')
       .data(legs, (d) => `${d.i}:${d.from}>${d.to}`)
       .join('line')
-      .attr('class', 'cycle-leg')
-      .attr('marker-end', 'url(#arrow)')
+      .attr('class', cls)
+      .attr('marker-end', marker)
       .attr('x1', (d) => pos[d.from].x)
       .attr('y1', (d) => pos[d.from].y)
-      .attr('x2', (d) => {
-        const a = pos[d.from];
-        const b = pos[d.to];
-        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        return b.x - ((b.x - a.x) / len) * (R + 4);
-      })
-      .attr('y2', (d) => {
-        const a = pos[d.from];
-        const b = pos[d.to];
-        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        return b.y - ((b.y - a.y) / len) * (R + 4);
-      });
+      .attr('x2', (d) => end(d, 'x'))
+      .attr('y2', (d) => end(d, 'y'));
+    // underneath: a soft glow and a flowing dash (direction of conversion); on top: the legs
+    drawLegs('g.cycle-glow', 'cycle-glow', null);
+    drawLegs('g.cycle-flow', 'cycle-flow', null);
+    drawLegs('g.cycle', 'cycle-leg', 'url(#arrow)');
 
     const inCycle = new Set(cycle || []);
     const nodes = svg.select('g.nodes')
@@ -106,7 +107,8 @@ export default function CurrencyGraph({ graph, cycle }) {
       .data(graph.nodes, (d) => d.id)
       .join((enter) => {
         const g = enter.append('g').attr('class', 'node');
-        g.append('circle').attr('r', R);
+        g.append('circle').attr('class', 'node-halo').attr('r', R + 5);
+        g.append('circle').attr('class', 'node-disc').attr('r', R);
         g.append('text').attr('text-anchor', 'middle').attr('dominant-baseline', 'central');
         g.append('title');
         return g;
@@ -129,12 +131,14 @@ export default function CurrencyGraph({ graph, cycle }) {
       aria-label={`Currency graph: ${active.length} of ${graph.nodes.length} currencies have rates (${active.join(', ') || 'none'}). ${cycleText}`}
     >
       <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" className="arrow" />
         </marker>
       </defs>
       <g className="edges" />
+      <g className="cycle-glow" aria-hidden="true" />
       <g className="cycle" />
+      <g className="cycle-flow" aria-hidden="true" />
       <g className="nodes" />
     </svg>
   );

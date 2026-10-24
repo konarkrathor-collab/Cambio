@@ -41,17 +41,21 @@ export default function ArbitrageView() {
               scanError ? <PanelState kind="error">Scan unavailable: {scanError}</PanelState> : <PanelState kind="loading">Waiting for the first scan…</PanelState>
             ) : scan.hasArbitrage ? (
               <div className="cycle-found">
+                <p className="cycle-tag"><span className="chip chip-accent">LOOPHOLE</span> <span className="faint num">scan {formatInt(scan.scanCount)} · {formatTime(scan.scannedAt)} UTC</span></p>
                 <p className="cycle-legs num">{scan.cycle.join(' → ')}</p>
-                <dl className="kv">
-                  <dt>Multiplier</dt><dd className="num">{formatMultiplier(scan.multiplier)}</dd>
+                <dl className="kv cycle-kv">
                   <dt>Profit</dt><dd className="num cycle-profit">+{formatPercent(scan.profitPercent)}</dd>
+                  <dt>Multiplier</dt><dd className="num">{formatMultiplier(scan.multiplier)}</dd>
                   <dt>Legs</dt><dd className="num">{scan.cycle.length - 1}</dd>
                 </dl>
               </div>
             ) : (
-              <p className="cycle-none">
-                No loophole above {formatPercent(threshold, 2)}. Real markets close these within milliseconds, so this is the expected result.
-              </p>
+              <div>
+                <p className="cycle-tag"><span className="chip">NONE</span> <span className="faint num">scan {formatInt(scan.scanCount)} · {formatTime(scan.scannedAt)} UTC</span></p>
+                <p className="cycle-none">
+                  No loophole above {formatPercent(threshold, 2)}. Real markets close these within milliseconds, so this is the expected result.
+                </p>
+              </div>
             )}
           </div>
         </Panel>
@@ -66,7 +70,7 @@ export default function ArbitrageView() {
             {scan?.belowThreshold ? <><dt>Below threshold</dt><dd>a cycle exists but earns less than the threshold</dd></> : null}
           </dl>
         </Panel>
-        <Panel id="alerts" title="Loophole alerts" className="grow">
+        <Panel id="alerts" title="Loophole alerts" meta={alerts.length ? `last ${alerts.length}` : null} className="grow">
           {alerts.length === 0 ? (
             <PanelState kind="empty">No LOOPHOLE_ALERT since this page opened. Alerts arrive when a cycle is found or lost.</PanelState>
           ) : (

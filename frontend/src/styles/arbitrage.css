@@ -1,0 +1,87 @@
+/* Arbitrage tab: the currency graph with the detected cycle, the loophole, scanner, alerts. */
+
+.grid-arb {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: start;
+}
+@media (min-width: 1280px) and (min-height: 760px) {
+  .grid-arb { height: 100%; align-items: stretch; }
+  .grid-arb > .panel, .grid-arb > .col { height: 100%; }
+  .grid-arb .col > .panel { flex: 0 0 auto; }
+  .grid-arb .col > .panel.grow { flex: 1 1 0; }
+  .area-graph .panel-body { display: flex; flex-direction: column; }
+  .area-graph .graph { flex: 1 1 0; min-height: 0; max-height: none; height: 100%; }
+}
+
+/* ------------------------------------------------------------------ the graph */
+.graph {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 480px;
+  background: var(--surface-panel);
+  border-radius: var(--r-sm);
+}
+.edge { stroke: var(--line-input); stroke-width: 1.2; opacity: 0.7; }
+.edge-derived { stroke: var(--line-input); stroke-dasharray: 1 4; opacity: 0.6; }
+.edge-stale { stroke: var(--line-strong); stroke-dasharray: 5 4; opacity: 0.6; }
+.node-disc { fill: var(--surface-raised); stroke: var(--text-faint); stroke-width: 1.4; }
+.node text { fill: var(--text); font: 600 var(--fs-label) var(--font-mono); letter-spacing: 0.04em; pointer-events: none; }
+.node-halo { fill: none; stroke: none; }
+.node-inactive .node-disc { fill: var(--surface-panel); stroke: var(--line-strong); stroke-dasharray: 3 3; }
+.node-inactive text { fill: var(--text-faint); }
+
+/* the loophole: the one glow in the app, because it is the alert */
+.cycle-glow { stroke: var(--accent-glow); stroke-width: 10; stroke-linecap: round; filter: blur(4px); animation: cycle-breathe var(--dur-pulse) var(--ease-in-out) infinite; }
+.cycle-flow { stroke: var(--accent-ink); stroke-width: 1.6; stroke-dasharray: 2 10; stroke-linecap: round; animation: cycle-flow 900ms linear infinite; }
+.cycle-leg { stroke: var(--accent); stroke-width: 3.5; stroke-linecap: round; animation: cycle-pulse var(--dur-pulse) var(--ease-in-out) infinite; }
+.arrow { fill: var(--accent); }
+.node-cycle .node-disc { stroke: var(--accent); stroke-width: 2.5; fill: var(--surface-input); }
+.node-cycle text { fill: var(--accent); }
+.node-cycle .node-halo { stroke: var(--accent); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: halo var(--dur-pulse) var(--ease-out) infinite; }
+@keyframes cycle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+@keyframes cycle-breathe { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.35; } }
+@keyframes cycle-flow { to { stroke-dashoffset: -12; } }
+@keyframes halo { from { opacity: 0.9; transform: scale(0.85); } to { opacity: 0; transform: scale(1.5); } }
+
+/* legend */
+.legend-list { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); list-style: none; padding: 0; margin: var(--sp-2) 0 0; color: var(--text-muted); font-size: var(--fs-data); }
+.key { display: inline-block; width: 22px; height: 0; vertical-align: middle; border-top: 2px solid var(--line-input); margin-right: var(--sp-1); }
+.key-derived { border-top: 2px dotted var(--line-input); }
+.key-stale { border-top: 2px dashed var(--line-strong); }
+.key-cycle { border-top: 3px solid var(--accent); }
+.key-inactive { width: 10px; height: 10px; border: 1.5px dashed var(--line-strong); border-radius: 50%; background: var(--surface-panel); }
+
+/* ------------------------------------------------------------------ loophole, scanner, alerts */
+.chip {
+  display: inline-block;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line-input);
+  border-radius: var(--r-xs);
+  font: 600 var(--fs-micro) / var(--lh-label) var(--font-mono);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+.chip { margin-right: var(--sp-2); }
+.chip-accent { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.cycle-box { min-height: 140px; }
+.cycle-tag { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--fs-label); }
+.cycle-legs { font-size: var(--fs-headline); line-height: var(--lh-headline); font-weight: 600; color: var(--accent); margin: 0 0 var(--sp-3); letter-spacing: 0.02em; }
+.cycle-kv { grid-template-columns: max-content 1fr; }
+.cycle-profit { color: var(--accent); font-size: var(--fs-headline); line-height: var(--lh-headline); font-weight: 600; }
+.grid-arb .kv dd:not(.num) { color: var(--text-muted); }
+.cycle-none { color: var(--text-2); margin: 0; font-size: var(--fs-ui); line-height: var(--lh-ui); max-width: 34em; }
+.alerts { list-style: none; padding: 0; margin: 0; max-height: 280px; overflow: auto; font-size: var(--fs-data); }
+.alerts li { display: flex; gap: var(--sp-2); align-items: baseline; padding: var(--sp-1) 0; border-bottom: 1px solid var(--line); animation: trade-in var(--dur-base) var(--ease-out); }
+.alerts li strong { font: 600 var(--fs-label) var(--font-mono); letter-spacing: 0.08em; min-width: 6.5em; }
+.alert-found strong { color: var(--accent); }
+.alert-cleared strong { color: var(--text-muted); }
+@media (min-width: 1280px) and (min-height: 760px) {
+  .grid-arb .alerts { max-height: none; }
+}
+
+@media (max-width: 1279px) {
+  .grid-arb { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+}

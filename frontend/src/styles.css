@@ -3,4 +3,5 @@
 @import './styles/fonts.css';
 @import './styles/base.css';
 @import './styles/market.css';
+@import './styles/arbitrage.css';
 @import './styles/legacy.css';

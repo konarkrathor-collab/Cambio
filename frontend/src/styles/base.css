@@ -15,7 +15,7 @@ html, body {
 }
 #root { min-height: 100vh; }
 h1, h2, h3 { margin: 0; font-weight: 600; }
-.num, .input, table td, .kv dd {
+.num, .input, table td {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums slashed-zero;
 }
