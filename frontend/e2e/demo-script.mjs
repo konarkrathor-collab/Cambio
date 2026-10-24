@@ -88,7 +88,7 @@ async function main() {
     check('1: the dashboard loads from the same port as the API', true);
     check('1: badge REPLAY (never LIVE), backend ok, stream open, seq', bar.includes('REPLAY') && !bar.includes('LIVE') && bar.includes('ok') && bar.includes('open') && bar.includes('seq'), bar);
     check('1: title and four tabs', (await page.textContent('body')).includes('Order Matching & Arbitrage Detector')
-      && (await page.getByRole('tab').allInnerTexts()).join(',') === 'Market,Arbitrage,Simulator,Inspector');
+      && (await page.getByRole('tab').allTextContents()).join(',') === 'Market,Arbitrage,Simulator,Inspector');
     await shot('1-topbar');
 
     // ---- 2. the order book

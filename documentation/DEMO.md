@@ -29,9 +29,10 @@ If something goes wrong mid-demo, `Ctrl-C` in the terminal and `./start-all.sh` 
 
 **Audience sees:**
 - The title **Order Matching & Arbitrage Detector**.
-- An amber **REPLAY** badge.
-- **backend ok**, **stream open**, and an engine **seq** number.
-- Four tabs: **Market**, **Arbitrage**, **Simulator**, **Inspector**.
+- An amber, hatched **REPLAY** badge.
+- **backend ok**, **stream open**, an engine **seq** number and a running **UTC** clock.
+- Four tabs, shown in capitals: **Market**, **Arbitrage**, **Simulator**, **Inspector**. Beside them is the **PAIR** box (EUR/USD).
+- On the first load the bar and panels settle in for about a second. That is the intro; any key or click skips it.
 - The **DEMO** drawer at the bottom.
 
 **Say:**
