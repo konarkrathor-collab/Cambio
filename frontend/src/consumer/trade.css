@@ -27,8 +27,11 @@
 .axis { fill: var(--ink-3); font-size: 12px; font-family: var(--font-text); }
 .chart-line { stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .chart-dot { fill: var(--ink); stroke: var(--white); stroke-width: 3; }
-.depth-bid { fill: var(--gain-tint); stroke: var(--gain); stroke-width: 2; }
-.depth-ask { fill: var(--loss-tint); stroke: var(--loss); stroke-width: 2; }
+.depth-bid-fill { fill: var(--gain-tint); }
+.depth-ask-fill { fill: var(--loss-tint); }
+.depth-bid, .depth-ask { stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.depth-bid { stroke: var(--gain); }
+.depth-ask { stroke: var(--loss); }
 
 /* segmented controls */
 .seg { display: inline-flex; background: var(--canvas); border-radius: var(--r-pill); padding: 4px; gap: 4px; }
