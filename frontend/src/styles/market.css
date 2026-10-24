@@ -1,0 +1,138 @@
+/* Market tab: order book ladder, depth chart, order ticket, resting orders, trades, account. */
+
+/* scroll areas inside panels (natural height when the page scrolls) */
+.scroll { overflow: auto; max-height: 260px; }
+.scroll-short { max-height: 132px; }
+.scroll-mine { max-height: 200px; overflow: auto; }
+
+/* ------------------------------------------------------------------ layout */
+.grid-market {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.95fr) minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: start;
+}
+@media (min-width: 1280px) and (min-height: 760px) {
+  /* a terminal: the three columns fill the view, panels scroll inside */
+  .grid-market { height: 100%; align-items: stretch; }
+  .grid-market > .panel, .grid-market > .col { height: 100%; }
+  .grid-market .col > .panel { flex: 0 1 auto; max-height: 62%; }
+  /* the panel that grows: the one marked .grow, else the column's last */
+  .grid-market .col > .panel.grow,
+  .grid-market .col:not(:has(> .grow)) > .panel:last-child { flex: 1 1 0; max-height: none; }
+  .grid-market .scroll:not(.scroll-short), .grid-market .scroll-mine { max-height: none; }
+  .area-book .panel-body { display: flex; flex-direction: column; }
+  .area-book .depth { flex: 1 1 auto; min-height: 148px; margin-top: var(--sp-3); }
+}
+@media (max-width: 1439px) {
+  .grid-market { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 0.95fr); }
+  .scroll-mine .mini-table td, .scroll-mine .mini-table th { padding-left: var(--sp-1); padding-right: var(--sp-1); }
+}
+@media (min-width: 1700px) {
+  .grid-market { grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.85fr) minmax(0, 1fr); }
+}
+
+/* ------------------------------------------------------------------ order book ladder */
+.book-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--fs-data); }
+.book-table th {
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  font-weight: 600;
+  font-stretch: 75%;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  text-align: left;
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--line-strong);
+}
+.book-table th.num, .book-table td.num { text-align: right; }
+.book-row td { padding: 0 var(--sp-2); height: var(--row-h); line-height: var(--row-h); color: var(--text-2); }
+.book-side { font: 600 var(--fs-micro) / var(--row-h) var(--font-mono); letter-spacing: 0.08em; width: 3.5em; }
+.book-ask .book-side, .book-ask .price { color: var(--ask); }
+.book-bid .book-side, .book-bid .price { color: var(--bid); }
+.book-best td { color: var(--text); font-weight: 600; }
+.book-best .price { font-size: var(--fs-ui); }
+.book-ask.book-best td { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ask) 45%, transparent); }
+.book-bid.book-best td { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bid) 45%, transparent); }
+.spread-row td {
+  padding: var(--sp-2);
+  font: var(--fs-data) / var(--lh-data) var(--font-mono);
+  color: var(--text-2);
+  background: var(--surface-raised);
+}
+.spread-row .spread-k { font-size: var(--fs-micro); letter-spacing: 0.08em; color: var(--text-muted); }
+
+/* a level whose volume changed flashes in its side's colour */
+.book-ask.flash td { animation: flash-ask var(--dur-flash) var(--ease-out); }
+.book-bid.flash td { animation: flash-bid var(--dur-flash) var(--ease-out); }
+@keyframes flash-ask { from { background: var(--ask-flash); } to { background: transparent; } }
+@keyframes flash-bid { from { background: var(--bid-flash); } to { background: transparent; } }
+
+/* ------------------------------------------------------------------ depth chart */
+/* the figure is sized by CSS; the chart measures it and draws at 1:1 */
+.depth { position: relative; height: 148px; margin: var(--sp-2) 0 0; }
+.depth svg { position: absolute; inset: 0; display: block; }
+.grid { stroke: var(--line); stroke-width: 1; }
+.axis { fill: var(--text-faint); font: var(--fs-micro) var(--font-mono); }
+.depth-bid { fill: var(--bid-area); stroke: var(--bid); stroke-width: 1.5; }
+.depth-ask { fill: var(--ask-area); stroke: var(--ask); stroke-width: 1.5; }
+.legend { font: 600 var(--fs-label) var(--font-mono); letter-spacing: 0.08em; }
+.legend-bid { fill: var(--bid); }
+.legend-ask { fill: var(--ask); }
+
+/* ------------------------------------------------------------------ order ticket and its result */
+.ticket-result { min-height: 64px; margin-top: var(--sp-3); }
+.result {
+  border: 1px solid var(--line-strong);
+  border-left: 2px solid var(--line-input);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  margin: 0;
+  background: var(--surface-raised);
+  font-size: var(--fs-data);
+  line-height: var(--lh-data);
+}
+.result p { margin: 2px 0; }
+.result .mini-table { margin-top: var(--sp-2); }
+.result .mini-table th { background: var(--surface-raised); }
+.result-ok { border-left-color: var(--bid); }
+.result-info { border-left-color: var(--text-2); }
+.result-error { border-left-color: var(--ask); }
+.status { font: 600 var(--fs-label) / var(--lh-label) var(--font-mono); letter-spacing: 0.06em; padding: 1px var(--sp-1); border-radius: var(--r-xs); border: 1px solid currentColor; }
+.status-filled, .status-partial { color: var(--bid); }
+.status-queued { color: var(--text); }
+.status-rejected { color: var(--ask); }
+
+/* ------------------------------------------------------------------ my resting orders: six columns in a narrow panel */
+.scroll-mine .mini-table td, .scroll-mine .mini-table th { padding-left: 6px; padding-right: 6px; }
+.scroll-mine .mini-table td:last-child { width: 1%; padding-right: 0; }
+.scroll-mine .btn-small { padding: 0 6px; line-height: 18px; }
+
+/* ------------------------------------------------------------------ trades */
+.trades td:first-child { color: var(--text-faint); }
+.trade-new { animation: trade-in var(--dur-base) var(--ease-out); }
+.trade-new td { animation: trade-tint 1200ms var(--ease-out); }
+.trade-new-bid td { --tint: var(--bid-tint); }
+.trade-new-ask td { --tint: var(--ask-tint); }
+@keyframes trade-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes trade-tint { from { background: var(--tint); } to { background: transparent; } }
+
+/* ------------------------------------------------------------------ account */
+.units { margin: 0 0 var(--sp-1); color: var(--text-muted); font-size: var(--fs-data); }
+.units abbr { color: var(--text-2); text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.kv-account { margin-bottom: var(--sp-3); }
+.kv-account dd { font-size: var(--fs-value); line-height: var(--lh-value); }
+.kv-account dt { align-self: center; }
+
+/* ------------------------------------------------------------------ reduced motion: the changed level is still marked */
+@media (prefers-reduced-motion: reduce) {
+  .book-row.flash td { outline: 1px solid var(--accent); outline-offset: -1px; }
+}
+
+/* ------------------------------------------------------------------ 1024-1279 px: two columns, nothing clipped */
+@media (max-width: 1279px) {
+  .grid-market { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); }
+  .grid-market > .col:last-child { grid-column: 1 / -1; flex-direction: row; }
+  .grid-market > .col:last-child > .panel { flex: 1 1 0; }
+}

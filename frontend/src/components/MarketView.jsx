@@ -10,10 +10,12 @@ import AccountPanel from './AccountPanel.jsx';
 
 export default function MarketView() {
   const pair = useStore((s) => s.pair);
+  const book = useStore((s) => s.book);
+  const levels = book && book.pair === pair ? `${book.asks.length} ask · ${book.bids.length} bid levels` : null;
   const [traderId, setTraderId] = useState('1');
   return (
     <div className="grid-market">
-      <Panel id="book" title={`Order book · ${pair}`} className="area-book">
+      <Panel id="book" title={`Order book · ${pair}`} meta={levels} className="area-book">
         <OrderBook />
         <DepthChart />
       </Panel>

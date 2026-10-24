@@ -34,7 +34,7 @@ function useChanged(book) {
   return changed;
 }
 
-function Row({ side, level, tickSize, max, flash }) {
+function Row({ side, level, tickSize, max, flash, best }) {
   if (!level) {
     return (
       <tr className={`book-row book-${side} book-empty`} aria-hidden="true">
@@ -47,7 +47,7 @@ function Row({ side, level, tickSize, max, flash }) {
   // the depth bar: cumulative volume as a share of the deepest side, drawn from the right
   const bar = { background: `linear-gradient(to left, ${tint} ${pct}%, transparent ${pct}%)` };
   return (
-    <tr className={`book-row book-${side}${flash ? ' flash' : ''}`} style={bar}>
+    <tr className={`book-row book-${side}${flash ? ' flash' : ''}${best ? ' book-best' : ''}`} style={bar}>
       <td className="book-side">{side === 'ask' ? 'ASK' : 'BID'}</td>
       <td className="num price">{formatPrice(level.price, tickSize)}</td>
       <td className="num">{formatInt(level.volume)}</td>
@@ -89,10 +89,10 @@ export default function OrderBook() {
         </thead>
         <tbody>
           {asks.map((l, i) => (
-            <Row key={`a${i}`} side="ask" level={l} tickSize={book.tickSize} max={max} flash={l && changed.has(`asks:${l.price}`)} />
+            <Row key={`a${i}`} side="ask" level={l} tickSize={book.tickSize} max={max} flash={l && changed.has(`asks:${l.price}`)} best={i === BOOK_DEPTH - 1} />
           ))}
           <tr className="spread-row">
-            <td>SPREAD</td>
+            <td className="spread-k">SPREAD</td>
             <td className="num" colSpan={2}>
               {sp && sp.ticks !== null ? `${sp.text} (${formatInt(sp.ticks)} tick${sp.ticks === 1 ? '' : 's'})` : book.bids.length || book.asks.length ? 'one side empty' : 'empty book'}
             </td>
@@ -101,7 +101,7 @@ export default function OrderBook() {
             </td>
           </tr>
           {bids.map((l, i) => (
-            <Row key={`b${i}`} side="bid" level={l} tickSize={book.tickSize} max={max} flash={l && changed.has(`bids:${l.price}`)} />
+            <Row key={`b${i}`} side="bid" level={l} tickSize={book.tickSize} max={max} flash={l && changed.has(`bids:${l.price}`)} best={i === 0} />
           ))}
         </tbody>
       </table>
