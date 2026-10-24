@@ -1,4 +1,4 @@
-/* Entry stylesheet: tokens first (the only source of values), then the shell, then panels. */
+/* Entry stylesheet: tokens first (the only source of values), then the shell, then each tab. */
 @import './styles/tokens.css';
 @import './styles/fonts.css';
 @import './styles/base.css';
@@ -6,4 +6,4 @@
 @import './styles/arbitrage.css';
 @import './styles/simulator.css';
 @import './styles/inspector.css';
-@import './styles/legacy.css';
+@import './styles/demo.css';

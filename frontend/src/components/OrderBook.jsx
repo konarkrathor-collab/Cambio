@@ -43,7 +43,7 @@ function Row({ side, level, tickSize, max, flash, best }) {
     );
   }
   const pct = max > 0 ? (level.cumulative / max) * 100 : 0;
-  const tint = side === 'ask' ? 'var(--ask-bar)' : 'var(--bid-bar)';
+  const tint = side === 'ask' ? 'var(--ask-tint)' : 'var(--bid-tint)';
   // the depth bar: cumulative volume as a share of the deepest side, drawn from the right
   const bar = { background: `linear-gradient(to left, ${tint} ${pct}%, transparent ${pct}%)` };
   return (

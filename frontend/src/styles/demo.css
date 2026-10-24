@@ -1,0 +1,83 @@
+/* The DEMO drawer: clearly a demo, in the caution amber, never mistaken for live data. */
+
+.demo {
+  position: relative;
+  background: var(--surface-raised);
+  border-top: 1px solid var(--accent);
+}
+/* a hatched amber rule along the top edge: the same "not live" mark as the REPLAY badge */
+.demo::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: repeating-linear-gradient(-45deg, var(--accent) 0 4px, transparent 4px 8px);
+  opacity: 0.6;
+}
+.demo summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--fs-data);
+  list-style: none;
+}
+.demo summary::-webkit-details-marker { display: none; }
+.demo summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--accent);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+.demo[open] summary::before { transform: rotate(90deg); }
+.demo summary:hover { color: var(--text); }
+.demo summary:focus-visible { outline-offset: -2px; }
+.demo-tag {
+  display: inline-block;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-xs);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 600 var(--fs-label) / var(--lh-label) var(--font-mono);
+  letter-spacing: 0.12em;
+}
+.demo-body {
+  padding: var(--sp-1) var(--sp-4) var(--sp-3);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-6);
+  animation: drawer-in var(--dur-base) var(--ease-out);
+}
+@keyframes drawer-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.demo-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2); }
+.demo-actions .input { width: 80px; }
+.demo-actions > p { flex-basis: 100%; margin: 0; font-size: var(--fs-label); line-height: var(--lh-label); max-width: 36em; }
+/* the log reads like a console */
+.demo-log {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  list-style: none;
+  max-height: 120px;
+  overflow: auto;
+  background: var(--surface-base);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-data);
+  line-height: var(--lh-data);
+  color: var(--text-2);
+}
+.demo-log li + li { margin-top: 2px; }
+.demo-log li:first-child:not(.muted) { color: var(--text); }
+.demo-log .num.muted { color: var(--text-faint); margin-right: var(--sp-1); }
+
+@media (max-width: 1279px) {
+  .demo-body { grid-template-columns: 1fr; gap: var(--sp-3); }
+}
