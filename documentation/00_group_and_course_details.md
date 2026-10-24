@@ -30,4 +30,4 @@
 ---
 
 ## Project Execution Note
-A proposed three-way split of sub-module ownership (vertical slices: Exchange Engine, Scanner, Vault & Directory) and the execution phases from here are drafted in **[07_team_workplan_and_phases.md](./07_team_workplan_and_phases.md)** — pending final confirmation by all three members at a team sync.
+What was built in each of the three vertical slices (Exchange Engine, Scanner, Vault & Directory) is recorded in **[07_team_workplan_and_phases.md](./07_team_workplan_and_phases.md)**. Who owns which slice is left for the three members to confirm there, in its ownership table.

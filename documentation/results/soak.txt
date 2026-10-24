@@ -1,0 +1,27 @@
+warm-up: 30 s of the same load
+start: live heap 4897 KB, threads 27, file descriptors 12
+soak: 600 s at 300 orders/s + 50 ticks/s, one event stream open
+
+minute  orders p50/p99/max (ms)      threads  fds  heap used  heap after GC  resting  streams
+     1    0.824 /   3.408 /   52.478       27    13     5418 KB           3 MB      198        1
+     2    0.796 /   3.185 /   38.358       27    13     9965 KB           3 MB      197        1
+     3    0.783 /   3.118 /   38.067       27    13     5175 KB           3 MB      190        1
+     4    0.789 /   3.221 /   33.530       27    13     9438 KB           3 MB      182        1
+     5    0.776 /   3.357 /   41.776       27    13     3174 KB           2 MB      170        1
+     6    0.783 /   3.235 /   21.371       27    13     3999 KB           3 MB      166        1
+     7    0.773 /   3.368 /   52.678       27    13     4637 KB           3 MB      141        1
+     8    0.790 /   3.264 /   43.943       27    13     6258 KB           3 MB      194        1
+     9    0.766 /   3.113 /   32.858       27    13     7244 KB           3 MB      145        1
+    10    0.785 /   3.282 /   55.981       27    12     5086 KB           4 MB      163        1
+  orders total (300.0/s offered 300.0/s, behind schedule 685 times): n=180001 p50=0.786 ms p99=3.256 ms max=55.981 ms
+    HTTP statuses: {200: 133968, 404: 46033}
+  ticks: 32005 sent in 640.0 s (50.0/s), non-200 payloads: 0
+  backend: 32005 ticks received, 1283 scans run
+live heap (after a forced GC): start 4897 KB, middle 4387 KB, end 2926 KB
+threads: start 27, end 27; file descriptors: start 12, end 11
+GC log: 1048 pauses; longest 21.512 ms
+PASS  threads flat (27 -> 27)
+PASS  file descriptors flat (12 -> 11)
+PASS  live heap within +25% (4897 -> 2926 KB)
+PASS  order p99 flat: first two minutes 3.296 ms, last two 3.197 ms
+      server alive at the end: {"status":"ok","seq":189002,"restingOrders":163,"accounts":12,"sseClients":1,"sseDropped":0,"uptimeMs":641748,"hasSimulation":false}

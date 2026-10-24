@@ -1,0 +1,26 @@
+phase A: 300 orders/s for 30 s, no streams
+  t=  10s: n=3001 p50=0.857 ms p99=3.146 ms max=9.729 ms
+  t=  20s: n=3000 p50=0.809 ms p99=3.062 ms max=34.196 ms
+  t=  30s: n=3000 p50=0.846 ms p99=3.660 ms max=8.878 ms
+orders total (300.0/s offered 300.0/s, behind schedule 33 times): n=9001 p50=0.835 ms p99=3.272 ms max=34.196 ms
+  HTTP statuses: {200: 6945, 404: 2056}
+phase B: the same, with 30 reading streams, 1 that never reads, 1 that reconnects in a loop
+      streams open: 32
+  t=  10s: n=3001 p50=1.147 ms p99=4.598 ms max=13.401 ms
+  t=  20s: n=3000 p50=1.076 ms p99=3.733 ms max=56.535 ms
+      sseDropped rose to 1 at t=26s of phase B
+  t=  30s: n=3000 p50=1.043 ms p99=3.703 ms max=14.503 ms
+orders total (300.0/s offered 300.0/s, behind schedule 60 times): n=9001 p50=1.088 ms p99=3.942 ms max=56.535 ms
+  HTTP statuses: {200: 6872, 404: 2129}
+      readers: 30, events each: min 11390, max 11390; closed by the server: 0
+      never-reading client dropped by the server: True (3966773 bytes were still buffered in the kernel when it read)
+      reconnect loop: 122 streams opened and closed, 13 refused
+      sseDropped: 0 -> 1
+PASS  order p99 3.272 ms without streams, 3.942 ms under stream stress (change 0.670 ms; limit +2 ms)
+PASS  the never-reading client was dropped and sseDropped rose
+PASS  all 30 readers received the same number of events
+limit: 32 streams held open, then one more
+PASS  the extra stream got 503 TOO_MANY_STREAMS
+      server alive: ok
+
+drill sse: 4 of 4 checks passed

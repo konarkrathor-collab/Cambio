@@ -1,0 +1,189 @@
+
+$ backend/scripts/simulate.sh 5000
+POST http://127.0.0.1:35439/api/simulate {"numOrders":5000,"seed":42,"profile":"shallow","baseline":true,"scanEvery":100,"rateVolatility":0.01}
+
+                                       engine     naive baseline
+profile                               shallow                   
+orders (all operations)                  5000               5000
+duration (ms)                           4.568              2.148
+orders/s                              1094517            2326872
+trades                                   2291               2291
+rejects                                   638                638
+cancels                                   961                961
+resting at end                             46                 46
+submit p50 (us)                         0.388              0.319
+submit p90 (us)                         1.354              0.718
+submit p99 (us)                         6.693              1.198
+submit max (us)                       319.129             23.157
+cancel p50 (us)                         0.206              0.183
+cancel p90 (us)                         0.457              0.331
+cancel p99 (us)                         2.392              0.598
+cancel max (us)                        94.797              2.791
+trade checksum               cf084b63dbf339ae   cf084b63dbf339ae
+final cash, all traders     12000000000000000  12000000000000000
+
+tradesMatch: true  cashMatch (every trader): true  checksumMatch: true
+speedup (engine / baseline orders/s): 0.47x
+scans: 50 on synthetic rates, p50 184.296 us, p99 5854.267 us, loopholes found in 50
+
+$ backend/scripts/simulate.sh 50000
+POST http://127.0.0.1:32987/api/simulate {"numOrders":50000,"seed":42,"profile":"shallow","baseline":true,"scanEvery":100,"rateVolatility":0.01}
+
+                                       engine     naive baseline
+profile                               shallow                   
+orders (all operations)                 50000              50000
+duration (ms)                          47.582             30.301
+orders/s                              1050815            1650080
+trades                                  23056              23056
+rejects                                  6203               6203
+cancels                                  9930               9930
+resting at end                             26                 26
+submit p50 (us)                         0.696              0.413
+submit p90 (us)                         1.695              0.806
+submit p99 (us)                         4.292              1.331
+submit max (us)                       192.242           2455.743
+cancel p50 (us)                         0.183              0.325
+cancel p90 (us)                         0.368              0.566
+cancel p99 (us)                         0.727              0.814
+cancel max (us)                        45.003             58.070
+trade checksum               2007ba9f1e7b091e   2007ba9f1e7b091e
+final cash, all traders     12000000000000000  12000000000000000
+
+tradesMatch: true  cashMatch (every trader): true  checksumMatch: true
+speedup (engine / baseline orders/s): 0.64x
+scans: 500 on synthetic rates, p50 54.783 us, p99 860.294 us, loopholes found in 500
+
+$ backend/scripts/simulate.sh 200000
+POST http://127.0.0.1:38321/api/simulate {"numOrders":200000,"seed":42,"profile":"shallow","baseline":true,"scanEvery":100,"rateVolatility":0.01}
+
+                                       engine     naive baseline
+profile                               shallow                   
+orders (all operations)                200000             200000
+duration (ms)                         113.321             78.730
+orders/s                              1764882            2540308
+trades                                  91121              91121
+rejects                                 25194              25194
+cancels                                 40118              40118
+resting at end                             26                 26
+submit p50 (us)                         0.277              0.259
+submit p90 (us)                         0.980              0.613
+submit p99 (us)                         3.141              1.063
+submit max (us)                      3094.267           2248.783
+cancel p50 (us)                         0.135              0.160
+cancel p90 (us)                         0.293              0.286
+cancel p99 (us)                         0.889              0.485
+cancel max (us)                       188.202             39.222
+trade checksum               38d356ef5882a411   38d356ef5882a411
+final cash, all traders     12000000000000000  12000000000000000
+
+tradesMatch: true  cashMatch (every trader): true  checksumMatch: true
+speedup (engine / baseline orders/s): 0.69x
+scans: 2000 on synthetic rates, p50 59.881 us, p99 343.679 us, loopholes found in 2000
+
+$ backend/scripts/simulate.sh 1000000
+POST http://127.0.0.1:46347/api/simulate {"numOrders":1000000,"seed":42,"profile":"shallow","baseline":true,"scanEvery":100,"rateVolatility":0.01}
+
+                                       engine     naive baseline
+profile                               shallow                   
+orders (all operations)               1000000            1000000
+duration (ms)                         274.444            359.460
+orders/s                              3643727            2781949
+trades                                 456870             456870
+rejects                                127084             127084
+cancels                                199375             199375
+resting at end                             57                 57
+submit p50 (us)                         0.170              0.203
+submit p90 (us)                         0.398              0.472
+submit p99 (us)                         1.522              0.886
+submit max (us)                      2210.742          77440.978
+cancel p50 (us)                         0.094              0.120
+cancel p90 (us)                         0.142              0.244
+cancel p99 (us)                         0.417              0.519
+cancel max (us)                      2071.156             72.789
+trade checksum               0529f1e4b9bdea8b   0529f1e4b9bdea8b
+final cash, all traders     12000000000000000  12000000000000000
+
+tradesMatch: true  cashMatch (every trader): true  checksumMatch: true
+speedup (engine / baseline orders/s): 1.31x
+scans: 10000 on synthetic rates, p50 34.685 us, p99 191.198 us, loopholes found in 10000
+
+$ PROFILE=deep backend/scripts/simulate.sh 5000
+POST http://127.0.0.1:33385/api/simulate {"numOrders":5000,"seed":42,"profile":"deep","baseline":true,"scanEvery":100,"rateVolatility":0.01}
+
+                                       engine     naive baseline
+profile                                  deep                   
+orders (all operations)                  5000               5000
+duration (ms)                           5.357              7.901
+orders/s                               933266             632799
+trades                                    873                873
+rejects                                   277                277
+cancels                                   483                483
+resting at end                           2881               2881
+submit p50 (us)                         0.295              1.032
+submit p90 (us)                         1.273              1.978
+submit p99 (us)                         6.551              4.065
+submit max (us)                       865.943            172.258
+cancel p50 (us)                         0.393              2.403
+cancel p90 (us)                         0.921              6.752
+cancel p99 (us)                         5.040             11.260
+cancel max (us)                        15.411             12.589
+trade checksum               d3abee3705730f69   d3abee3705730f69
+final cash, all traders     12000000000000000  12000000000000000
+
+tradesMatch: true  cashMatch (every trader): true  checksumMatch: true
+speedup (engine / baseline orders/s): 1.47x
+scans: 50 on synthetic rates, p50 135.485 us, p99 1437.741 us, loopholes found in 50
+
+$ PROFILE=deep backend/scripts/simulate.sh 50000
+POST http://127.0.0.1:43335/api/simulate {"numOrders":50000,"seed":42,"profile":"deep","baseline":true,"scanEvery":100,"rateVolatility":0.01}
+
+                                       engine     naive baseline
+profile                                  deep                   
+orders (all operations)                 50000              50000
+duration (ms)                          47.789            824.001
+orders/s                              1046260              60679
+trades                                   9130               9130
+rejects                                  2468               2468
+cancels                                  4965               4965
+resting at end                          28382              28382
+submit p50 (us)                         0.606             15.904
+submit p90 (us)                         1.160             39.605
+submit p99 (us)                         3.541             61.417
+submit max (us)                      1874.308           2654.871
+cancel p50 (us)                         0.559              2.132
+cancel p90 (us)                         0.893              5.862
+cancel p99 (us)                         1.413             13.836
+cancel max (us)                        25.713            278.193
+trade checksum               0bf2c0008c0f272d   0bf2c0008c0f272d
+final cash, all traders     12000000000000000  12000000000000000
+
+tradesMatch: true  cashMatch (every trader): true  checksumMatch: true
+speedup (engine / baseline orders/s): 17.24x
+scans: 500 on synthetic rates, p50 39.354 us, p99 417.566 us, loopholes found in 500
+
+$ PROFILE=deep backend/scripts/simulate.sh 200000
+POST http://127.0.0.1:37629/api/simulate {"numOrders":200000,"seed":42,"profile":"deep","baseline":true,"scanEvery":100,"rateVolatility":0.01}
+
+                                       engine     naive baseline
+profile                                  deep                   
+orders (all operations)                200000             200000
+duration (ms)                         201.883          18395.930
+orders/s                               990671              10871
+trades                                  36688              36688
+rejects                                  9930               9930
+cancels                                 19807              19807
+resting at end                         113390             113390
+submit p50 (us)                         0.537             90.318
+submit p90 (us)                         0.996            176.417
+submit p99 (us)                         2.744            338.370
+submit max (us)                     16552.692           8254.339
+cancel p50 (us)                         0.641             13.521
+cancel p90 (us)                         1.081             46.218
+cancel p99 (us)                         1.951             87.742
+cancel max (us)                       308.408           3632.536
+trade checksum               30140bfcea9cff24   30140bfcea9cff24
+final cash, all traders     12000000000000000  12000000000000000
+
+tradesMatch: true  cashMatch (every trader): true  checksumMatch: true
+speedup (engine / baseline orders/s): 91.12x
+scans: 2000 on synthetic rates, p50 52.144 us, p99 251.186 us, loopholes found in 2000

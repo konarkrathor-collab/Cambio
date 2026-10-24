@@ -1,0 +1,196 @@
+
+$ benchmark/run.sh ladder --n 300000 --seed 42 --reps 7 --warmup 3
+workload: n=300000 seed=42 range=65536 | put=156349 remove=78112 ask=20631 bid=21100 walkUp=11876 walkDown=11932
+oracle: checksum=0x578e1efa5f6cfc9b levels=467
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+oracle-treeMap        50.79      5906646         57.8     35.74      36.60     OK  
+unsorted-array       116.40      2577241         16.0    101.11      20.44     OK  
+sorted-array          27.66     10846515         16.0     24.02      44.72     OK  
+flat-array            10.34     29024501          1.7      9.35      29.81     OK  
+skip-list             47.02      6380916         83.6     44.20       5.35     OK  
+radix16               32.28      9293623          8.6     26.29     280.27     OK  
+bst                   30.54      9824638         10.5     24.58      21.90     OK  
+avl                   38.57      7778056         10.5     31.52      26.19     OK  
+red-black             29.00     10345714         12.6     23.32      22.54     OK  
+splay                 55.10      5444942         10.5     51.73      21.89     OK  
+2-3-tree              57.74      5195607         21.8     47.32      22.69     OK  
+b-tree32              34.53      8688420          1.3     28.75      87.73     OK  
+b+tree32              24.50     12247143          1.1     18.96      11.70     OK  
+
+rebalance counters (fresh replay of the same workload):
+  red-black: 66857 rotations (insert 37930, delete 28927)
+  avl:       78895 rotations (insert 50057, delete 28838)
+  splay:     2898896 restructure rotations
+  2-3 tree:  52527 splits, 52178 merges (no rotations)
+  b-tree32:  666 splits, 643 merges (no rotations)
+
+RESULT: all candidates validated against the oracle and timed OK
+
+$ benchmark/run.sh ladder --pattern sorted --n 12000 --band 4000 --seed 42 --reps 7 --warmup 3
+workload: n=12000 seed=42 range=65536 | put=6256 remove=3058 ask=831 bid=829 walkUp=502 walkDown=524
+oracle: checksum=0x667b5f60a27f9ec3 levels=3198
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+oracle-treeMap         1.36      8813439         63.8      1.13     161.74     OK  
+unsorted-array         7.36      1629343         16.0      6.02      45.77     OK  
+sorted-array         0.9998     12002821         16.0    0.8784      33.48     OK  
+flat-array             3.93      3054030         43.7      3.40      90.75     OK  
+skip-list              1.61      7470743         97.8      1.54      34.33     OK  
+radix16              0.9790     12257593         20.7    0.9307      37.74     OK  
+bst                   39.87       300998         20.9     36.61       7.18     OK  
+avl                    1.08     11096131         20.9      1.01      13.94     OK  
+red-black            0.9179     13072664         25.0    0.7524      39.11     OK  
+splay                0.9160     13100337         20.9    0.8074     356.08     OK  
+2-3-tree               1.67      7166370         66.5      1.47       3.27     OK  
+b-tree32             0.9056     13250839         18.8    0.7708      35.21     OK  
+b+tree32             0.7825     15336384         20.3    0.7107     102.34     OK  
+
+rebalance counters (fresh replay of the same workload):
+  red-black: 7806 rotations (insert 6158, delete 1648)
+  avl:       7635 rotations (insert 6227, delete 1408)
+  splay:     40231 restructure rotations
+  2-3 tree:  6206 splits, 3498 merges (no rotations)
+  b-tree32:  382 splits, 217 merges (no rotations)
+
+RESULT: all candidates validated against the oracle and timed OK
+
+$ benchmark/run.sh footprint --n 300000 --seed 42 --range 16777216 --band 100000
+workload: n=300000 seed=42 range=16777216 | put=156349 remove=78112 ask=20631 bid=21100 walkUp=11876 walkDown=11932
+oracle: checksum=0x3601e096f0303c41 levels=54169
+layout: header=12B arrayHeader=16B ref=4B align=8B
+
+structure          levels     resident_B    B/level    objects    heapDelta_B    valid
+oracle-treeMap      54169        4766936       88.0     162509        4745392       OK  
+unsorted-array      54169        4800056       88.6          3        8388632       OK  
+sorted-array        54169        4800056       88.6          3        8388632       OK  
+flat-array          54169      134217784     2477.8          2      136314920       OK  
+skip-list           54169        3062352       56.5     108342        3062352       OK  
+radix16             54169        3172240       58.6      79862        3173040       OK  
+bst                 54169        2166864       40.0      54171        2166864       OK  
+avl                 54169        2166800       40.0      54170        2167112       OK  
+red-black           54169        2600208       48.0      54171        2645192       OK  
+splay               54169        2166792       40.0      54170        2166792       OK  
+2-3-tree            54169        5137328       94.8     140106        5138472       OK  
+b-tree32            54169        1541568       28.5       8056        1541568       OK  
+b+tree32            54169        1566008       28.9       7909        1566008       OK  
+
+RESULT: all candidates validated against the oracle; resident footprint measured
+
+$ benchmark/run.sh queue --n 300000 --seed 42 --reps 7 --warmup 3
+workload: n=300000 seed=42 profile=shallow | enqueue=150049 dequeue=134841 cancel=12083 peek=3027 | finalDepth=3125
+oracle: checksum=0xe9ed43f6fd1fef66 liveOrders=3125
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+oracle-linkedMap       7.51     39948206         45.2      6.83     189.28     OK  profile=shallow
+array                  7.79     38504585          0.4      7.02      42.03     OK  profile=shallow
+singly-list           29.33     10227419         16.0     27.58      14.61     OK  profile=shallow
+dll-no-index          29.77     10078657         20.0     23.61      58.44     OK  profile=shallow
+tree-by-id            22.54     13306749         24.0     16.49      35.47     OK  profile=shallow
+dll+hash               8.17     36719643         20.2      6.94      28.27     OK  profile=shallow
+
+RESULT: all candidates validated against the oracle and timed OK
+
+$ benchmark/run.sh queue --profile deep --n 300000 --seed 42 --reps 7 --warmup 3
+workload: n=300000 seed=42 profile=deep | enqueue=150140 dequeue=90100 cancel=44643 peek=15117 | finalDepth=15397
+oracle: checksum=0xd7045492c088503d liveOrders=15397
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+oracle-linkedMap       9.97     30078411         48.5      8.04       9.56     OK  profile=deep
+array                100.71      2978736          1.7     71.60       9.21     OK  profile=deep
+singly-list          488.86       613678         16.0    454.33       8.80     OK  profile=deep
+dll-no-index         551.23       544241         20.0    523.20      14.48     OK  profile=deep
+tree-by-id            29.94     10020036         24.0     25.62      11.62     OK  profile=deep
+dll+hash              10.24     29289287         20.9      8.38      78.16     OK  profile=deep
+
+RESULT: all candidates validated against the oracle and timed OK
+
+$ benchmark/run.sh cache --n 300000 --seed 42 --reps 7 --warmup 3
+workload: n=300000 seed=42 | universe=100000 zipfS=1.00 capacity=10000 | distinctTouched=47907 top10%share=81.1%
+oracle: checksum=0x624e175ea1e67cf3 resident=10000
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+oracle-linkedMapLRU      15.84     18945221         37.4     14.27      55.93     OK  finalSize=10000 capacity=10000
+hash-chaining          6.53     45932065          6.9      5.64      82.30     OK  finalSize=47907 capacity=10000
+hash-open              6.40     46839563         14.0      5.51      67.18     OK  finalSize=47907 capacity=10000
+hash+LRU              10.86     27633383         11.2      8.50      57.21     OK  finalSize=10000 capacity=10000
+splay                 65.30      4594526          6.4     60.57      71.56     OK  finalSize=47907 capacity=10000
+
+RESULT: all candidates validated against the oracle and timed OK
+
+$ benchmark/run.sh ticker --n 300000 --seed 42 --reps 7 --warmup 3
+=== phase 1: exact-match workload (insert + contains) ===
+workload: n=300000 seed=42 mode=exact | universe=132 | insert=132 contains=299868 prefix=0 avgPrefixMatches=0.0
+oracle: checksum=0x6abd41c49b164a6 registry=132
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+oracle-linearScan     110.40      2717315          0.0    103.79      12.21     OK  mode=exact
+hash-set               6.00     49968112          0.0      4.82      34.66     OK  mode=exact
+sorted-array          21.12     14205283          0.0     19.72      51.31     OK  mode=exact
+tst                   15.97     18790036          0.0     13.56      14.45     OK  mode=exact
+trie                   8.36     35874675          0.2      7.83      46.56     OK  mode=exact
+
+=== phase 2: prefix workload (insert + contains + prefixSearch) ===
+workload: n=300000 seed=42 mode=prefix | universe=132 | insert=132 contains=194963 prefix=104905 avgPrefixMatches=6.9
+oracle: checksum=0x12d276fbe26e1156 registry=132
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+oracle-linearScan     163.94      1829934          0.0    147.58       7.21     OK  mode=prefix
+sorted-array          36.73      8168428          0.0     34.20      46.60     OK  mode=prefix
+tst                   39.14      7665593          0.0     35.95       7.91     OK  mode=prefix
+trie                  28.84     10401118          0.2     25.90      18.05     OK  mode=prefix
+hash-set                  -            -            -         -          -    N/A  prefixSearch structurally unsupported (hash set: no prefix ordering exists)
+
+RESULT: all candidates validated against the oracle and timed OK (hash-set N/A on phase 2 is structural incapability, not a failure)
+
+$ benchmark/run.sh compression --seed 42 --reps 7 --warmup 3
+workload: seed=42 | batches=256KB+1024KB+4096KB | total=5505087 bytes lines=84524
+gate: round-trip identity decode(encode(x)) == x, byte-for-byte, per batch
+
+alloc counter: enabled
+
+structure           ratio    enc_ms    dec_ms  enc_MB/s  dec_MB/s  spread%   alloc/in valid  note
+rle                1.0240     18.23     10.67     302.0     516.1    49.85       4.02    OK  
+lzw                0.2962     80.95     50.00      68.0     110.1    35.84       0.80    OK  
+huffman            0.5874     60.46     67.94      91.1      81.0    22.80       2.09    OK  
+arithmetic         0.5842    306.67    490.71      18.0      11.2     7.58       1.59    OK  
+
+RESULT: all candidates round-tripped byte-for-byte and were timed OK
+
+$ benchmark/run.sh arbitrage --graph real --seed 42 --reps 7 --warmup 3
+workload: real-frankfurter-2026-10-09 | V=8 E=56
+reference: hasNegativeCycle=false via independent brute-force oracle (V=8 <= 10)
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+timing: 4464 scans/rep, 3 interleaved warmup rounds (>= 2000 scans/candidate); timed unit = build + detect (reconstruction untimed)
+bellman-ford         0.0006     98754195          3.0    0.0005      20.51     OK  real-frankfurter-2026-10-09
+spfa                 0.0006     87970620         19.7    0.0006     307.20     OK  real-frankfurter-2026-10-09
+floyd-warshall       0.0018     31146858         20.6    0.0015      39.49     OK  real-frankfurter-2026-10-09
+johnson              0.0006    100976791          3.3    0.0005      22.05     OK  real-frankfurter-2026-10-09
+tarjan+bf            0.0015     36627875         32.6    0.0013      42.90     OK  real-frankfurter-2026-10-09
+
+note: BenchResult's n/ops-per-sec columns are repurposed here as edge count E / edge-relaxations-per-second (not an order-flow op count like the ladder bench) ? see benchmark/README.md.
+RESULT: all candidates validated against the reference and timed OK
+
+$ benchmark/run.sh arbitrage --graph synthetic --v 8 --inject true --seed 42 --reps 7 --warmup 3
+workload: synthetic-v8-seed42+injected(5->6->7->5) | V=8 E=56
+reference: hasNegativeCycle=true via independent brute-force oracle (V=8 <= 10)
+alloc counter: enabled
+
+structure         median_ms      ops/sec   alloc_B/op    min_ms    spread%  valid  note
+timing: 4464 scans/rep, 3 interleaved warmup rounds (>= 2000 scans/candidate); timed unit = build + detect (reconstruction untimed)
+bellman-ford         0.0006     90031571          3.0    0.0006       7.55     OK  synthetic-v8-seed42+injected(5->6->7->5)
+spfa                 0.0013     42712441         19.7    0.0012      32.27     OK  synthetic-v8-seed42+injected(5->6->7->5)
+floyd-warshall       0.0019     29245680         20.6    0.0017       4.15     OK  synthetic-v8-seed42+injected(5->6->7->5)
+johnson              0.0006     92897115          3.3    0.0006       2.27     OK  synthetic-v8-seed42+injected(5->6->7->5)
+tarjan+bf            0.0020     28312574         36.0    0.0019      47.91     OK  synthetic-v8-seed42+injected(5->6->7->5)
+
+note: BenchResult's n/ops-per-sec columns are repurposed here as edge count E / edge-relaxations-per-second (not an order-flow op count like the ladder bench) ? see benchmark/README.md.
+RESULT: all candidates validated against the reference and timed OK

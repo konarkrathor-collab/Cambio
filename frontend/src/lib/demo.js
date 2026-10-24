@@ -68,18 +68,30 @@ export function seedFlow({ pair, midTicks, decimals, n = 20, seed = 1 }) {
 }
 
 /**
- * The +0.4% EUR -> GBP -> USD -> EUR loophole of the contract's example: EUR/USD 1.08,
- * GBP/USD 1.30 and EUR/GBP 0.83409 (fair value 0.830769...). Marked replay, so the badge
- * shows REPLAY; live quotes expire after 30 s, so the alert clears by itself.
+ * The pairs of the injected loophole: a triangle the live feed never streams (OANDA quotes
+ * neither SGD nor HKD; feed/symbols.json), so no live or replayed tick overwrites it while it
+ * shows (backend/BUGS.md F3). USD/SGD 1.30 and USD/HKD 7.80 make SGD/HKD fair at 6.0;
+ * quoting it at 6.024 makes USD -> SGD -> HKD -> USD return 1.30 x 6.024 / 7.80 = 1.004.
+ */
+export const LOOPHOLE_TICKS = [
+  { symbol: 'OANDA:USD_SGD', price: 1.3 },
+  { symbol: 'OANDA:USD_HKD', price: 7.8 },
+  { symbol: 'OANDA:SGD_HKD', price: 6.024 },
+];
+
+/**
+ * The +0.4% loophole tick set. Marked replay, so the badge shows REPLAY; live quotes expire
+ * after 30 s, so the alert clears by itself.
  */
 export function loopholePayload(nowMs) {
   return {
     source: 'finnhub-ws',
     replay: true,
-    ticks: [
-      { symbol: 'OANDA:EUR_USD', price: 1.08, ts: nowMs },
-      { symbol: 'OANDA:GBP_USD', price: 1.3, ts: nowMs },
-      { symbol: 'OANDA:EUR_GBP', price: 0.83409, ts: nowMs },
-    ],
+    ticks: LOOPHOLE_TICKS.map((t) => ({ ...t, ts: nowMs })),
   };
+}
+
+/** True while the badge says LIVE: an injection then would mix demo quotes into live data. */
+export function injectBlocked(status) {
+  return Boolean(status && status.state === 'live' && !status.replay);
 }

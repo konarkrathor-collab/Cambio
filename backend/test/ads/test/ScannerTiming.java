@@ -7,14 +7,17 @@ import ads.scanner.ArbitrageScanner;
 import ads.scanner.ScanResult;
 
 /**
- * {@code test.sh --scan-timing}: wall time of one {@link ArbitrageScanner#scan()} at V=12
- * (the Directory's universe) and V=20, for a graph with no arbitrage (every cross derived
- * through USD), one with a +0.4% cycle, and one with only a sub-threshold inconsistency
- * (+0.0003% on one direct cross), which still needs the shifted passes. Median of 25 timed
- * batches after a warmup.
+ * {@code test.sh --scan-timing}: wall time of one {@link ArbitrageScanner#scan()} at V=7 (the
+ * currencies the live feed streams, feed/symbols.json), V=12 (the Directory's universe, which
+ * the fallback covers) and V=20 (doc 04's stress size). Each size is timed for a graph with
+ * no arbitrage (every cross derived through USD), one with a +0.4% cycle, and one with only a
+ * sub-threshold inconsistency (+0.0003% on one direct cross), which still needs the shifted
+ * passes. Median of 25 timed batches after a warmup.
  */
 final class ScannerTiming {
   private static final String[] EXTRA = { "SEK", "NOK", "DKK", "PLN", "MXN", "ZAR", "TRY", "BRL" };
+  /** The seven currencies of the 21 pairs the live feed subscribes to (feed/symbols.json). */
+  private static final String[] LIVE = { "USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF" };
 
   private ScannerTiming() {
   }
@@ -27,7 +30,7 @@ final class ScannerTiming {
         "result"));
     String[] v12 = universe(0);
     String[] v20 = universe(EXTRA.length);
-    for (String[] ccy : new String[][] { v12, v20 }) {
+    for (String[] ccy : new String[][] { LIVE, v12, v20 }) {
       time(ccy, "no-arbitrage", 0.0);
       time(ccy, "arbitrage", 0.004);
       time(ccy, "sub-threshold", 0.000003);

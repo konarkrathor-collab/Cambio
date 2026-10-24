@@ -537,3 +537,82 @@ At the 256× wider range with the standard book, every structure's footprint is 
 5. **Doc 05 §1's other claims, re-checked:** "memory scales with active price levels, not tick range" holds for radix (and for every tree). The flat array's range-proportional footprint is confirmed in resident bytes (134 MB to hold ~450 levels). The boxed `TreeMap` costs 88 B/level, 1.8× the hand-rolled red-black tree: the boxing caveat in Runs 1–2, quantified.
 
 **Verdict status:** after Runs 12c, 13a and 14, the Radix Tree pick has no remaining measured advantage over the B+ tree on speed (tie), tick-range robustness (tie), or memory (B+ ~2× leaner), and it uses ~9–22% more memory than red-black. Its remaining case is qualitative: zero restructuring (fixed 16-level depth; deterministic, input-order-independent) and less code than the B+ tree. Recorded in doc 05 §1 and doc 07 for the team's decision, not resolved here.
+
+## Run 15 — Final run on the finished code (Stage 7b)
+
+**Why:** the closing measurement of the project. It re-runs the whole lab and the production parity suite on the final code, on one machine, in one sitting, so that the numbers quoted in the README, the demo script and the final report all come from a single committed run.
+
+**Machine and method:** Linux container, Intel Xeon @ 2.10 GHz, 4 cores visible, 15.7 GB, OpenJDK 21.0.12 ([`documentation/results/environment.txt`](../../documentation/results/environment.txt)). Interleaved timing, `--reps 7 --warmup 3`, seed 42. Every candidate passed its correctness gate before it was timed. The full console output is in [`documentation/results/benchmark_run15.txt`](../../documentation/results/benchmark_run15.txt), and the rows were appended to `raw_results.csv` and `footprint_results.csv`. Nothing in `benchmark/src` changed after Run 14.
+
+### 15a — Price ladder
+
+| structure | walk, n=300000 (ms) | alloc B/op | sorted adversarial, n=12000 (ms) | resident B/level, large book |
+|:---|--:|--:|--:|--:|
+| flat-array | 10.34 | 1.7 | 3.93 | 2,477.8 |
+| **b+tree32 (production)** | **24.50** | **1.1** | **0.78** | **28.9** |
+| sorted-array | 27.66 | 16.0 | 1.00 | 88.6 |
+| red-black | 29.00 | 12.6 | 0.92 | 48.0 |
+| bst | 30.54 | 10.5 | **39.87** | 40.0 |
+| radix16 | 32.28 (spread 280%) | 8.6 | 0.98 | 58.6 |
+| b-tree32 | 34.53 | 1.3 | 0.91 | 28.5 |
+| avl | 38.57 | 10.5 | 1.08 | 40.0 |
+| skip-list | 47.02 | 83.6 | 1.61 | 56.5 |
+| oracle-treeMap | 50.79 | 57.8 | 1.36 | 88.0 |
+| splay | 55.10 | 10.5 | 0.92 | 40.0 |
+| 2-3-tree | 57.74 | 21.8 | 1.67 | 94.8 |
+| unsorted-array | 116.40 | 16.0 | 7.36 | 88.6 |
+
+Rotation and split counters are identical to Runs 10–13. The resident footprint (`footprint --n 300000 --seed 42 --range 16777216 --band 100000`, 54,169 live levels) is byte-identical to Run 14, as a deterministic graph walk should be: the B+ tree uses 1,566,008 B (28.9 B/level), radix16 3,172,240 B (58.6), red-black 2,600,208 B (48.0) and flat-array 134,217,784 B.
+
+**Findings.**
+* The B+ tree is again the fastest tree on the walk workload, as in Run 13a. It is 15% ahead of red-black (24.50 vs 29.00 ms), and its sorted-insertion time is the lowest of every candidate.
+* Radix16's 32.28 ms carries a 280% spread, so that single figure is noise; Run 12c's radix ≈ red-black tie stands.
+* The unbalanced BST is again the outlier under sorted insertion: 39.87 ms against at most 1.67 ms for every balanced candidate, about 24× slower (Run 11: 31× or more).
+
+### 15b — Order queue
+
+| structure | shallow (ms) | deep (ms) | deep vs pick | alloc B/op (deep) |
+|:---|--:|--:|--:|--:|
+| oracle-linkedMap | 7.51 | 9.97 | 1.0× | 48.5 |
+| array | 7.79 | 100.71 | 9.8× | 1.7 |
+| singly-list | 29.33 | 488.86 | 48× | 16.0 |
+| dll-no-index | 29.77 | 551.23 | 54× | 20.0 |
+| tree-by-id (treap) | 22.54 | 29.94 | 2.9× | 24.0 |
+| **dll+hash (the pick)** | **8.17** | **10.24** | — | 20.9 |
+
+Run 13b reproduces. On the shallow book (3,125 live orders) the plain array ties the pick (7.79 vs 8.17 ms). On the deep book (15,397 live orders, 44,643 cancels) it is 9.8× slower, and the un-indexed lists are about 50× slower, while the pick moves only from 8.17 to 10.24 ms.
+
+### 15c — Account cache, ticker, compression, arbitrage
+
+- **Cache** (Zipf 1.0, capacity 10,000):
+  - The pick, hash+LRU, takes 10.86 ms.
+  - The unbounded hash maps are faster, at 6.40 (open addressing) and 6.53 (chaining). This is the price of bounding memory that Run 7 recorded: they end holding 47,907 entries against the pick's 10,000.
+  - Splay takes 65.30 ms, 6.0× the pick.
+  - The JDK `LinkedHashMap` LRU takes 15.84 ms; the pick is 1.46× faster than it.
+- **Ticker:**
+  - Exact match: hash-set 6.00 ms, trie 8.36 (1.39× slower than the hash set), TST 15.97, sorted-array 21.12.
+  - Prefix: trie 28.84 ms, sorted-array 36.73, TST 39.14. The hash set cannot answer prefix queries.
+  - Run 12d's corrected reading reproduces: the trie loses exact match to a hash set and wins the prefix workload it exists for, by 1.27–1.36×.
+- **Compression** (5,505,087 B, every candidate round-trips byte for byte):
+  - Ratios are identical to Run 9: huffman 0.5874, lzw 0.2962, arithmetic 0.5842, rle 1.0240.
+  - Huffman encodes at 91.1 MB/s and decodes at 81.0 MB/s on this machine. Run 9 measured 186.3 and 177.6 MB/s on an Apple M4, so only the speeds depend on the machine.
+- **Arbitrage, real data:**
+  - The archived Frankfurter snapshot has V=8 and E=56, and the independent brute-force oracle finds no negative cycle.
+  - Per scan: Bellman-Ford 0.0006 ms, Johnson 0.0006, SPFA 0.0006, Tarjan+BF 0.0015, Floyd-Warshall 0.0018.
+- **Arbitrage, synthetic** (V=8 with an injected cycle): Bellman-Ford 0.0006 ms, Johnson 0.0006, SPFA 0.0013, Floyd-Warshall 0.0019, Tarjan+BF 0.0020.
+
+### 15d — Production parity (the finished backend)
+
+`backend/test.sh` puts each production structure behind a thin adapter and runs it through the benchmark's own correctness gate. All six structures pass, including the ladder under the walk, wide-range, sorted and band-1 to band-3 stress workloads: 207 tests passed, 0 failed ([`parity_gates.txt`](../../documentation/results/parity_gates.txt)).
+
+`backend/test.sh --timing` puts production and benchmark side by side in one JVM ([`parity_timing.txt`](../../documentation/results/parity_timing.txt)):
+- Ladder walk: production 25.30 ms, benchmark 24.43 ms (+3.6%).
+- Queue, deep profile: production 11.91 ms, benchmark 8.76 ms (+35.9%). This is the only delta above doc 08's 25% line. The production queue node is the full `Order`, carrying the level pointer and the index link that cancel and settlement need; it allocates 40.9 against 20.9 B/op. The explanation is in doc 03 §8.
+- Ticker: production 20–31% *faster* than the benchmark.
+- Every other delta is between −5% and +22%.
+
+The production scan's own cost, with the threshold-shifted passes and the exact triangle check that the benchmark's plain Bellman-Ford does not have, is in [`scan_timing.txt`](../../documentation/results/scan_timing.txt). Per scan: 0.86–4.30 µs at V=7, 3.16–24.98 µs at V=12, and 11.61–173.22 µs at V=20.
+
+### What changes in the verdicts
+
+None. All six picks reproduce on the finished code, and so do the recorded tensions: the flat array's narrow-range speed, the plain array's shallow-book tie, and LZW's 2× better ratio. The ladder pick, changed from radix to the B+ tree after Runs 12–14 (doc 08 §3a), is confirmed: the B+ tree is the fastest and leanest balanced ladder here.

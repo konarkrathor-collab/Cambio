@@ -1,0 +1,37 @@
+$ git clone <repository> && cd order-matching-arbitrage-detector && scripts/verify-all.sh
+# fresh clone of commit 090ed67 (the Stage 7b commit before this file's content was added), 2026-10-24, the machine in environment.txt
+
+verify-all: full run, logs in /tmp/ads-verify.28Xerm
+
+backend suite (test.sh)            PASS    35s
+feed suite (test.sh)               PASS     0s
+frontend tests and build           PASS     5s
+smoke (every endpoint)             PASS    14s
+replay gate                        PASS    20s
+end to end (e2e.sh)                PASS     6s
+logbook check                      PASS    13s
+flood check                        PASS    74s
+drill 1: kill -9                   PASS    12s
+feed venv                          PASS     3s
+drills 2-3: feed                   PASS    61s
+drill 4: fuzz (seed 1, 5000)       PASS    14s
+drill 5: SSE                       PASS    84s
+documentation links                PASS     0s
+
+step                               result  time
+backend suite (test.sh)            PASS     35s
+feed suite (test.sh)               PASS      0s
+frontend tests and build           PASS      5s
+smoke (every endpoint)             PASS     14s
+replay gate                        PASS     20s
+end to end (e2e.sh)                PASS      6s
+logbook check                      PASS     13s
+flood check                        PASS     74s
+drill 1: kill -9                   PASS     12s
+feed venv                          PASS      3s
+drills 2-3: feed                   PASS     61s
+drill 4: fuzz (seed 1, 5000)       PASS     14s
+drill 5: SSE                       PASS     84s
+documentation links                PASS      0s
+
+verify-all: 0 failed, 341s in all; logs in /tmp/ads-verify.28Xerm

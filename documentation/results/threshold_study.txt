@@ -1,0 +1,10 @@
+capture: /home/user/order-matching-arbitrage-detector/feed/samples/finnhub_ticks_2026-10-23.jsonl (3690 ticks over 299 s, 432 throttled scans)
+best-cycle profit per scan (exhaustive): p50 0.01070%  p90 0.01314%  p99 0.01562%  max 0.01652%
+threshold   scanner reports a cycle      exhaustive: some cycle >= t      triangles only: some triangle >= t
+  0.001%     429 / 432  ( 99.31%)        429 / 432  ( 99.31%)        429 / 432  ( 99.31%)
+  0.005%     427 / 432  ( 98.84%)        427 / 432  ( 98.84%)        427 / 432  ( 98.84%)
+  0.010%      58 / 432  ( 13.43%)        286 / 432  ( 66.20%)          4 / 432  (  0.93%)
+  0.020%       0 / 432  (  0.00%)          0 / 432  (  0.00%)          0 / 432  (  0.00%)
+  0.050%       0 / 432  (  0.00%)          0 / 432  (  0.00%)          0 / 432  (  0.00%)
+legs of the best cycle in scans where it reaches 0.010%: 5 legs=4 6 legs=38 7 legs=244
+recommended default: 0.020% (smallest threshold with fewer than 1% of scans reporting a cycle)

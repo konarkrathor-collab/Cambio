@@ -1,0 +1,11 @@
+PASS  unknown pairs rejected UNKNOWN_PAIR (14)
+PASS  no unknown pair traded or rested (0)
+      1200 orders -> 1047 trades reported; GET /api/trades holds 500, ring overflow 547
+/tmp/ads-logbook.C6Krf4/data/logbook: 1047 trade records, 43488 bytes decoded, fnv64=0x982eb67d493a0c1
+PASS  archived trades = GET /api/trades + ring overflow (1047)
+PASS  archived trades = trades reported by POST /api/orders (1047)
+PASS  newest 500 archive records = GET /api/trades, byte for byte (same)
+PASS  archive trade ids are 1..1047 in order (0)
+PASS  every archived pair is a Directory pair (0)
+
+logbook: 7 passed, 0 failed

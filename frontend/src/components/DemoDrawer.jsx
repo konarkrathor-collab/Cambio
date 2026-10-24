@@ -1,13 +1,14 @@
 import { useId, useState } from 'react';
 import { api } from '../lib/api.js';
 import { describeError, placeOrder, refreshScan, refreshStatus, store, useStore } from '../app/runtime.js';
-import { loopholePayload, seedFlow, seedMidTicks } from '../lib/demo.js';
+import { LOOPHOLE_TICKS, injectBlocked, loopholePayload, seedFlow, seedMidTicks } from '../lib/demo.js';
 import { fromTicks } from '../lib/decimal.js';
 import { tickDecimals } from '../lib/format.js';
 
 /** DEMO tools, clearly labelled: seed order flow and inject a (replay) loophole. */
 export default function DemoDrawer() {
   const pair = useStore((s) => s.pair);
+  const blocked = injectBlocked(useStore((s) => s.status));
   const [n, setN] = useState('20');
   const [seed, setSeed] = useState('1');
   const [busy, setBusy] = useState(false);
@@ -47,7 +48,7 @@ export default function DemoDrawer() {
     setBusy(true);
     try {
       const r = await api.postRates(loopholePayload(Date.now()));
-      add(`Injected a +0.4% EUR/USD 1.08, GBP/USD 1.30, EUR/GBP 0.83409 tick set as REPLAY data (accepted ${r.accepted}, rejected ${r.rejected}). Live quotes expire after 30 s, so the loophole clears by itself.`);
+      add(`Injected a +0.4% ${LOOPHOLE_TICKS.map((t) => `${t.symbol.slice(6).replace('_', '/')} ${t.price}`).join(', ')} tick set as REPLAY data (accepted ${r.accepted}, rejected ${r.rejected}). These pairs are not streamed by the feed, so nothing overwrites them; the quotes expire after 30 s and the loophole clears by itself.`);
       refreshStatus();
       refreshScan();
     } catch (e) {
@@ -71,7 +72,8 @@ export default function DemoDrawer() {
             <input id={`${id}-seed`} className="input num" value={seed} onChange={(e) => setSeed(e.target.value)} inputMode="numeric" />
           </div>
           <button type="button" className="btn" onClick={seedFlowAction} disabled={busy}>Seed flow on {pair}</button>
-          <button type="button" className="btn btn-warn" onClick={inject} disabled={busy}>Inject loophole (replay)</button>
+          <button type="button" className="btn btn-warn" onClick={inject} disabled={busy || blocked} aria-describedby={blocked ? `${id}-blocked` : undefined}>Inject loophole (replay)</button>
+          {blocked ? <p id={`${id}-blocked`} className="muted">Disabled while the feed is LIVE: demo quotes are never mixed into live data. Run without a Finnhub key (replay) to use it.</p> : null}
         </div>
         <ol className="demo-log" aria-live="polite" aria-label="Demo log">
           {log.length === 0 ? <li className="muted">Nothing done yet. Every action is logged here.</li> : null}

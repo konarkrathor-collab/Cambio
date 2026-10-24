@@ -50,7 +50,7 @@ npm run preview     # serve the production build on 127.0.0.1:4173, with the sam
 | Arbitrage | The 12-currency graph: the layout is settled once, so it never jumps. Dimmed nodes have no rate; faint dashed edges are stale; the cycle glows and pulses. Also the cycle's legs, multiplier and profit; the scanner's threshold, counts and source; and the last 20 loophole alerts. |
 | Simulator | The `POST /api/simulate` form (presets, seed, baseline, profile, scan interval, volatility), checked against the contract's ranges, including the 200,000-order cap for deep runs with the baseline. Engine versus baseline table and bars, with `checksumMatch`. The doc 04 targets marked MET or MISSED; a miss is never hidden. The last result loads on mount. |
 | Inspector | Per side: levels with order counts and the FIFO queue head, and the ladder's B+ tree shape. Refreshed on every book update for the pair and every 2 s. |
-| DEMO drawer | Seed flow: N seeded crossing orders from traders 1–11. Inject loophole: a +0.4% EUR/USD, GBP/USD, EUR/GBP tick set sent with `"replay": true`, so the badge shows REPLAY. It clears by itself when the quotes expire after 30 s. Every action is logged. |
+| DEMO drawer | Seed flow: N seeded crossing orders from traders 1–11. Inject loophole: a +0.4% USD/SGD, USD/HKD, SGD/HKD tick set sent with `"replay": true`, so the badge shows REPLAY. The feed never streams these pairs, so the loophole is not overwritten while a feed runs (backend/BUGS.md F3). It clears by itself when the quotes expire after 30 s. Disabled while the badge says LIVE. Every action is logged. |
 
 ## How it works
 
@@ -113,6 +113,16 @@ npm install -g playwright && npx playwright install chromium   # once
 node frontend/e2e/golden-path.mjs              # against npm run dev
 node frontend/e2e/golden-path.mjs --preview    # against the production build
 SHOTS=/tmp/shots node frontend/e2e/golden-path.mjs   # also save screenshots
+```
+
+`e2e/demo-script.mjs` follows [documentation/DEMO.md](../documentation/DEMO.md) literally:
+- it runs `start-all.sh` with no Finnhub key, so the feed replays the capture;
+- it clicks through demo steps 1–7, checking what the audience should see at each;
+- it then stops `start-all.sh` with SIGTERM, its Ctrl-C path.
+
+```sh
+node frontend/e2e/demo-script.mjs              # port 8080 must be free
+PORT=8091 node frontend/e2e/demo-script.mjs    # another port
 ```
 
 ## Known behaviour

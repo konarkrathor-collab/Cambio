@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every gate of the project, in sequence, from a fresh clone (macOS and Linux).
-#   scripts/verify-all.sh            everything (about 12 minutes)
+#   scripts/verify-all.sh            everything (about 6 minutes)
 #   scripts/verify-all.sh --quick    skips the slow timing drills (flood, feed, SSE)
 # Prints PASS or FAIL with the time of each step and a final table, and exits non-zero if
 # anything failed. Each step's full output is kept in a log directory it names at the end.

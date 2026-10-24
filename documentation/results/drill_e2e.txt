@@ -1,0 +1,24 @@
+backend: http://127.0.0.1:33043 (data dir /tmp/ads-e2e.NjT9SI/data)
+PASS  seeded accounts (12)
+$ python3 feed/feed.py --replay feed/samples/finnhub_ticks_2026-10-23.jsonl --speed 0 --backend http://127.0.0.1:33043/api/market/rates
+PASS  status: replay flag (true)
+PASS  status: 3690 replayed ticks, 5 scans
+PASS  crossing limit buy (PARTIAL)
+PASS  market sell (FILLED)
+PASS  market buy on USD/JPY (FILLED)
+PASS  cancel ORD-19 (200)
+PASS  cancel it again (404)
+PASS  margin rejection (MARGIN)
+PASS  loophole ticks accepted (3)
+PASS  scan finds the loophole (true)
+PASS  simulate shallow: checksumMatch (true)
+PASS  simulate deep: checksumMatch (true)
+PASS  health: hasSimulation (true)
+PASS  stream order: BOOK_UPDATE (line 401) < TRADE (line 461) < LOOPHOLE_ALERT (line 529)
+PASS  every TRADE run ends in a BOOK_UPDATE (0)
+PASS  stream events carry strictly increasing ids (0)
+PASS  trades in GET /api/trades = TRADE events (9)
+PASS  parsed every trade (9)
+PASS  final balances = start - buys + sells, recomputed from 9 trades (0)
+
+e2e: 20 passed, 0 failed

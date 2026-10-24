@@ -285,6 +285,24 @@ Note: the drop happens only once the kernel's socket buffers are full. On loopba
 
 ---
 
+## F3: With the feed running, the DEMO loophole was overwritten within seconds, and briefly showed a false 3–4% one (Stage 7b, frontend, found writing the demo script)
+
+**What broke.** "Inject loophole" posted a +0.4% EUR/USD 1.08, GBP/USD 1.30, EUR/GBP 0.83409 tick set. Every test injected it into a backend with no feed running. Under `start-all.sh`, though, the replay feed keeps sending those three pairs: the committed capture has 128 EUR/USD, 152 GBP/USD and 74 EUR/GBP ticks in 299 s, one every 2–4 s. Each real tick replaced one injected leg, so the +0.4% triangle lasted only seconds.
+
+Worse, until all three legs were replaced, the graph mixed a real EUR/USD near 1.119 with the injected 1.08. That made a triangle of about 3–4%, which the dashboard would have shown as a loophole. The demo script's "watch it glow, then clear by itself after 30 s" step could not work as written.
+
+With a live key the same thing happens. In addition, the badge reads the *last* payload's `replay` flag, so it would turn back to LIVE while injected quotes were still in the graph.
+
+**Fix** (`frontend/src/lib/demo.js`, `DemoDrawer.jsx`):
+- The injection now uses a triangle the feed never streams: USD/SGD 1.30, USD/HKD 7.80 and SGD/HKD 6.024. OANDA quotes neither SGD nor HKD (`feed/symbols.json`), so no live or replayed tick touches these pairs. The loophole earns exactly 1.30 × 6.024 / 7.80 = 1.004, and it stays until its quotes expire after 30 s.
+- The button is disabled, with a visible reason, while the badge would say LIVE. Demo quotes are never mixed into live data.
+- `misc.test.js` checks that every injected pair is outside the feed's subscription and that the block applies only to LIVE.
+- The golden-path script and DEMO.md were re-run against `start-all.sh` with the replay feed running.
+
+The contract's +0.4% EUR/GBP/USD example (doc 09) and `scripts/e2e.sh` are unchanged: they post to a backend that has no other feed.
+
+---
+
 ## Note (not a bug): Appendix A lets cash go negative. Accepted in doc 08 at 6462f32
 
 Implemented as written, Appendix A checks margin per order against the account as it is at that moment, and nothing is reserved for resting orders. A market order is checked only at the best opposite tick, even if it then sweeps deeper. So a trader with cash 1,000 can rest two buys of 10 × 100. Each passes on its own, both fill, and cash ends at −1,000. The engine does not improvise a reservation. The Vault accepts negative cash when loading (it rejects only a negative `marginLimit`), and the scenario test `Appendix A reserves no cash…` pins the behaviour down. Doc 08 Appendix A now records this as a known simplification.

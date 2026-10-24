@@ -1,0 +1,32 @@
+backend http://127.0.0.1:35237, fake socket ws://127.0.0.1:36033
+      t= 0s  state=waiting source=none connected=false stale=0 hasArbitrage=false
+      t= 1s  state=live source=finnhub-ws connected=true stale=0 hasArbitrage=true
+PASS  feed live and the +0.4% loophole found (1 s after start)
+
+drill 2: $ kill -9 11127     (the feed process)
+      +14.97 s  state=disconnected (connected=false; scan still reports the cycle from quotes under 30 s old)
+      +29.93 s  hasArbitrage=false, 7 stale symbols: the scan cleared
+      the clearing scan ran at 2026-10-24T10:37:31.931Z: 29.722 s after the kill, 30.004 s after the last tick's timestamp
+      (the last tick was stamped 2026-10-24T10:37:01.927Z; live quotes are valid for 30 s, contract 3.7)
+PASS  status disconnected within 30 s of the kill (14.97 s)
+PASS  scan cleared within 30 s of the kill (29.72 s)
+      restart the feed (backend untouched):
+      t= 0s  state=disconnected source=cached connected=false stale=7 hasArbitrage=false
+      t= 1s  state=live source=finnhub-ws connected=true stale=0 hasArbitrage=true
+PASS  feed restarted: live again and the loophole found again in 1 s, backend not restarted
+
+drill 3: network loss: $ kill 11125     (the socket server; the feed keeps running)
+      t= 0s  state=live source=finnhub-ws connected=true stale=0 hasArbitrage=true
+      t= 5s  state=live source=finnhub-ws connected=true stale=0 hasArbitrage=true
+      t=10s  state=live source=finnhub-ws connected=true stale=0 hasArbitrage=true
+      t=16s  state=fallback source=frankfurter-fallback connected=false stale=0 hasArbitrage=false
+PASS  socket lost: the feed falls back to Frankfurter after 16 s (trigger 15 s)
+      feed: 2026-10-24 10:37:33,303 WARNING socket lost (WebSocketConnectionClosedException: Connection to remote host was lost.); reconnecting
+      feed: 2026-10-24 10:37:48,693 INFO socket down 15.0s: switching to the Frankfurter fallback
+      network back: restart the socket server
+      t= 7s  state=fallback source=frankfurter-fallback connected=false stale=0 hasArbitrage=false
+      t= 8s  state=fallback source=frankfurter-fallback connected=false stale=0 hasArbitrage=false
+      t= 9s  state=live source=finnhub-ws connected=true stale=0 hasArbitrage=true
+PASS  socket back: the feed reconnects by itself, live finnhub-ws again in 9 s (backoff caps at 10 s)
+
+feed drills: 6 passed, 0 failed

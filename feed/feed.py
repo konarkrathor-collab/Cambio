@@ -431,7 +431,7 @@ def discover(api_key, out_path=SYMBOLS_FILE):
         "subscribe": subscribe,
         "streamedPairs": streamed,
         "notStreamedDirectly": not_streamed,
-        "note": "Pairs in notStreamedDirectly are derived through USD by the Java backend.",
+        "note": "Pairs in notStreamedDirectly have no OANDA quote, and when none of their USD legs is streamed either (the INR pairs) the backend cannot derive them from live ticks; they come only from the Frankfurter fallback (doc 06 section 4).",
     }
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2)

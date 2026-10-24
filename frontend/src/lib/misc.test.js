@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { sourceBadge } from './badge.js';
 import { evaluateTargets } from './targets.js';
-import { loopholePayload, seedFlow, seedMidTicks, seededRandom } from './demo.js';
+import { LOOPHOLE_TICKS, injectBlocked, loopholePayload, seedFlow, seedMidTicks, seededRandom } from './demo.js';
+import symbols from '../../../feed/symbols.json';
 import { toTicks } from './decimal.js';
 
 describe('data-source badge', () => {
@@ -83,9 +84,24 @@ describe('demo tools', () => {
     const p = loopholePayload(1792783468459);
     expect(p.replay).toBe(true);
     expect(p.source).toBe('finnhub-ws');
-    const [eurusd, gbpusd, eurgbp] = p.ticks.map((t) => t.price);
-    const profit = (eurgbp * gbpusd / eurusd - 1) * 100;
+    const [usdsgd, usdhkd, sgdhkd] = p.ticks.map((t) => t.price);
+    const profit = (usdsgd * sgdhkd / usdhkd - 1) * 100;
     expect(profit).toBeGreaterThan(0.39);
     expect(profit).toBeLessThan(0.41);
+    expect(p.ticks.every((t) => t.ts === 1792783468459)).toBe(true);
+  });
+  it('injects only pairs the live feed never streams, so no tick overwrites them (F3)', () => {
+    const live = new Set(symbols.subscribe.flatMap((s) => s.slice(6).split('_')));
+    for (const t of LOOPHOLE_TICKS) {
+      expect(symbols.subscribe).not.toContain(t.symbol);
+      expect(t.symbol.slice(6).split('_').some((c) => !live.has(c))).toBe(true);
+    }
+  });
+  it('blocks the injection while the badge would say LIVE', () => {
+    expect(injectBlocked({ state: 'live', replay: false })).toBe(true);
+    expect(injectBlocked({ state: 'live', replay: true })).toBe(false);
+    expect(injectBlocked({ state: 'connected, no ticks', replay: false })).toBe(false);
+    expect(injectBlocked({ state: 'fallback', replay: false })).toBe(false);
+    expect(injectBlocked(null)).toBe(false);
   });
 });

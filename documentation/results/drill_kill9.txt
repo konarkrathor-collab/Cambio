@@ -1,0 +1,15 @@
+phase A: 40 crossing pairs, 40 trades, last order ORD-80; waiting 6 s
+phase B: 10 more pairs (10 trades, last order ORD-100), then 1 s, then:
+$ kill -9 10553
+PASS  12 accounts back after the restart (12)
+PASS  balances = seed balances + archived trades, every trader (0)
+      balances include phase B: its trades were archived with the Vault flush before the kill
+PASS  the archive decodes after kill -9 (ok)
+PASS  every phase A trade is archived (yes)
+      archive holds 50 of 50 trades: 0 lost from the loss window (bound: the last 2 s, 5 s at most)
+      first ids after restart: ORD-1000101, trade 1000051 (before the kill: ORD-100, trade 50)
+PASS  new order id exceeds every earlier one (yes)
+PASS  new trade id exceeds every earlier one (yes)
+PASS  an order from before the kill is not resting (404) (404)
+
+drill kill -9: 7 passed, 0 failed

@@ -1,0 +1,108 @@
+== parity: price ladder (B+ tree) vs TreeMap oracle, LadderBench.verify ==
+PASS  ladder walk n=300000 band=500 seed=42  (180 ms)  checksum=0x578e1efa5f6cfc9b levels=467
+PASS  ladder walk n=300000 band=500 seed=7  (134 ms)  checksum=0x537d0d3eff10f95 levels=440
+PASS  ladder walk n=300000 band=500 seed=2026  (111 ms)  checksum=0x5ce2e97fd9dfd73e levels=522
+PASS  ladder wide-range n=300000 range=16777216 band=500 seed=42  (107 ms)  checksum=0xea76636e529afc9b levels=467
+PASS  ladder wide-range n=300000 range=16777216 band=500 seed=7  (115 ms)  checksum=0x7c69b8d7bc5a0f95 levels=440
+PASS  ladder sorted n=12000 band=4000 seed=42  (63 ms)  checksum=0x667b5f60a27f9ec3 levels=3198
+PASS  ladder sorted n=12000 band=4000 seed=7  (23 ms)  checksum=0x8c278cd94be544df levels=3125
+PASS  ladder stress walk n=50000 band=1 seed=1  (9 ms)  checksum=0x411e7a1d6cc906a7 levels=1
+PASS  ladder stress walk n=50000 band=1 seed=2  (4 ms)  checksum=0x3c11d2e9bab60565 levels=2
+PASS  ladder stress walk n=50000 band=1 seed=3  (10 ms)  checksum=0x9ea8d33dd61683fd levels=0
+PASS  ladder stress walk n=50000 band=1 seed=4  (4 ms)  checksum=0x5e9ee8c9da62d7fd levels=1
+PASS  ladder stress sorted n=50000 band=1 seed=1  (4 ms)  checksum=0x8ac68ceb1aabbaa2 levels=2
+PASS  ladder stress walk n=50000 band=2 seed=1  (6 ms)  checksum=0xbd312cdad3bf21b1 levels=4
+PASS  ladder stress walk n=50000 band=2 seed=2  (5 ms)  checksum=0xf01f9d2fb1d8c446 levels=3
+PASS  ladder stress walk n=50000 band=2 seed=3  (5 ms)  checksum=0x91270138bce4f159 levels=5
+PASS  ladder stress walk n=50000 band=2 seed=4  (5 ms)  checksum=0xe2b36343292179b1 levels=1
+PASS  ladder stress sorted n=50000 band=2 seed=1  (5 ms)  checksum=0x98b7274dc771d292 levels=5
+PASS  ladder stress walk n=50000 band=3 seed=1  (6 ms)  checksum=0x2d714d083110ac7c levels=5
+PASS  ladder stress walk n=50000 band=3 seed=2  (5 ms)  checksum=0xbe4662ee509bcc95 levels=5
+PASS  ladder stress walk n=50000 band=3 seed=3  (5 ms)  checksum=0xd633caaf3d1669b8 levels=2
+PASS  ladder stress walk n=50000 band=3 seed=4  (5 ms)  checksum=0xd0f0c902129a7ac1 levels=7
+PASS  ladder stress sorted n=50000 band=3 seed=1  (5 ms)  checksum=0x6fe98487adc4a287 levels=6
+PASS  ladder stress walk n=50000 band=5 seed=1  (6 ms)  checksum=0xe05af9c178215e36 levels=7
+PASS  ladder stress walk n=50000 band=5 seed=2  (6 ms)  checksum=0x53feb423dd01f088 levels=1
+PASS  ladder stress walk n=50000 band=5 seed=3  (6 ms)  checksum=0x3f85569f1241a396 levels=6
+PASS  ladder stress walk n=50000 band=5 seed=4  (7 ms)  checksum=0xd7dd3d2893600877 levels=6
+PASS  ladder stress sorted n=50000 band=5 seed=1  (7 ms)  checksum=0xded80372e4f79347 levels=7
+PASS  ladder stress walk n=50000 band=17 seed=1  (10 ms)  checksum=0x37df62b074c758a1 levels=21
+PASS  ladder stress walk n=50000 band=17 seed=2  (8 ms)  checksum=0x545d0347d8b5d614 levels=13
+PASS  ladder stress walk n=50000 band=17 seed=3  (8 ms)  checksum=0x43114f5ba7e3c252 levels=22
+PASS  ladder stress walk n=50000 band=17 seed=4  (8 ms)  checksum=0x9e31b89a73054859 levels=24
+PASS  ladder stress sorted n=50000 band=17 seed=1  (8 ms)  checksum=0x3af7dcbb6b47ac2c levels=31
+PASS  ladder stress walk n=50000 band=64 seed=1  (13 ms)  checksum=0x61726e900e808227 levels=67
+PASS  ladder stress walk n=50000 band=64 seed=2  (11 ms)  checksum=0xdc01856828dff14b levels=55
+PASS  ladder stress walk n=50000 band=64 seed=3  (11 ms)  checksum=0x1964ff11812f8948 levels=80
+PASS  ladder stress walk n=50000 band=64 seed=4  (13 ms)  checksum=0x92f93f0adf0c55c levels=72
+PASS  ladder stress sorted n=50000 band=64 seed=1  (12 ms)  checksum=0x3ce1a8b08d17d74a levels=98
+PASS  ladder stress walk n=50000 band=1000 seed=1  (17 ms)  checksum=0xc3f58781778272d3 levels=1007
+PASS  ladder stress walk n=50000 band=1000 seed=2  (15 ms)  checksum=0x113565b91cb7bc65 levels=920
+PASS  ladder stress walk n=50000 band=1000 seed=3  (19 ms)  checksum=0x1c03bcec661e3a28 levels=1046
+PASS  ladder stress walk n=50000 band=1000 seed=4  (17 ms)  checksum=0xe6cfb0e9e210c062 levels=1019
+PASS  ladder stress sorted n=50000 band=1000 seed=1  (15 ms)  checksum=0xf0c39ce17dfe2b3b levels=1485
+PASS  ladder stress walk n=50000 band=3000 seed=1  (26 ms)  checksum=0x1202d3288e93d1c7 levels=2872
+PASS  ladder stress walk n=50000 band=3000 seed=2  (19 ms)  checksum=0xb7074054bb59e582 levels=2907
+PASS  ladder stress walk n=50000 band=3000 seed=3  (22 ms)  checksum=0xa3e0568ca2042da9 levels=2995
+PASS  ladder stress walk n=50000 band=3000 seed=4  (18 ms)  checksum=0x1424faa762ae82b8 levels=3000
+PASS  ladder stress sorted n=50000 band=3000 seed=1  (24 ms)  checksum=0x95a8f71bec97dc2d levels=4495
+== parity: order queue (level DLL + global index) vs LinkedHashMap oracle, QueueBench.verify ==
+PASS  queue shallow n=300000 seed=42  (98 ms)  checksum=0xe9ed43f6fd1fef66 liveOrders=3125
+PASS  queue shallow n=300000 seed=7  (67 ms)  checksum=0xfc7b9d743ecbcedc liveOrders=3376
+PASS  queue deep n=300000 seed=42  (98 ms)  checksum=0xd7045492c088503d liveOrders=15397
+PASS  queue deep n=300000 seed=7  (72 ms)  checksum=0x2ca727a7dee404c4 liveOrders=14685
+== parity: account cache (hash + LRU) vs LRU reference, CacheBench gates ==
+PASS  cache residency gate: CacheOps copy agrees with the benchmark original  (231 ms)  both pass the benchmark's own LruHashCache
+PASS  cache n=300000 seed=42 universe=100000 zipf=1.0 capacity=10000  (139 ms)  checksum=0x624e175ea1e67cf3 resident=10000
+PASS  cache n=300000 seed=7 universe=100000 zipf=1.0 capacity=10000  (119 ms)  checksum=0x85af6a646368e154 resident=10000
+PASS  cache n=100000 seed=42 universe=5000 zipf=0.8 capacity=500  (26 ms)  checksum=0xed657c98a485768a resident=500
+PASS  cache n=100000 seed=42 universe=1000 zipf=1.0 capacity=1  (18 ms)  checksum=0x29c4d7a5478706a7 resident=1
+PASS  cache n=100000 seed=42 universe=50000 zipf=1.0 capacity=200000  (30 ms)  checksum=0xccd1792e5bddd41b resident=19534
+== parity: arbitrage scanner (Bellman-Ford) vs brute-force oracle, ArbitrageBench.verify ==
+PASS  arbitrage real Frankfurter snapshot  (13 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=3 inject=true seed=42  (6 ms)  hasCycle=true via brute-force oracle cycle=[2, 0, 1, 2]
+PASS  arbitrage synthetic v=3 inject=true seed=7  (0 ms)  hasCycle=true via brute-force oracle cycle=[2, 1, 0, 2]
+PASS  arbitrage synthetic v=3 inject=false seed=42  (0 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=3 inject=false seed=7  (2 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=4 inject=true seed=42  (0 ms)  hasCycle=true via brute-force oracle cycle=[2, 1, 0, 2]
+PASS  arbitrage synthetic v=4 inject=true seed=7  (0 ms)  hasCycle=true via brute-force oracle cycle=[1, 3, 2, 1]
+PASS  arbitrage synthetic v=4 inject=false seed=42  (0 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=4 inject=false seed=7  (0 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=5 inject=true seed=42  (0 ms)  hasCycle=true via brute-force oracle cycle=[0, 2, 1, 0]
+PASS  arbitrage synthetic v=5 inject=true seed=7  (0 ms)  hasCycle=true via brute-force oracle cycle=[0, 3, 2, 0]
+PASS  arbitrage synthetic v=5 inject=false seed=42  (0 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=5 inject=false seed=7  (0 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=6 inject=true seed=42  (0 ms)  hasCycle=true via brute-force oracle cycle=[5, 1, 4, 5]
+PASS  arbitrage synthetic v=6 inject=true seed=7  (0 ms)  hasCycle=true via brute-force oracle cycle=[4, 0, 5, 4]
+PASS  arbitrage synthetic v=6 inject=false seed=42  (0 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=6 inject=false seed=7  (0 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=8 inject=true seed=42  (3 ms)  hasCycle=true via brute-force oracle cycle=[5, 6, 7, 5]
+PASS  arbitrage synthetic v=8 inject=true seed=7  (0 ms)  hasCycle=true via brute-force oracle cycle=[1, 3, 4, 1]
+PASS  arbitrage synthetic v=8 inject=false seed=42  (3 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=8 inject=false seed=7  (4 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=10 inject=true seed=42  (98 ms)  hasCycle=true via brute-force oracle cycle=[7, 6, 2, 7]
+PASS  arbitrage synthetic v=10 inject=true seed=7  (12 ms)  hasCycle=true via brute-force oracle cycle=[4, 3, 0, 4]
+PASS  arbitrage synthetic v=10 inject=false seed=42  (334 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=10 inject=false seed=7  (356 ms)  hasCycle=false via brute-force oracle
+PASS  arbitrage synthetic v=20 inject=true seed=42  (1 ms)  hasCycle=true via benchmark Bellman-Ford verdict (V>10) cycle=[1, 9, 16, 1]
+PASS  arbitrage synthetic v=20 inject=true seed=7  (1 ms)  hasCycle=true via benchmark Bellman-Ford verdict (V>10) cycle=[7, 9, 13, 7]
+PASS  arbitrage synthetic v=20 inject=false seed=42  (0 ms)  hasCycle=false via benchmark Bellman-Ford verdict (V>10)
+PASS  arbitrage synthetic v=20 inject=false seed=7  (1 ms)  hasCycle=false via benchmark Bellman-Ford verdict (V>10)
+PASS  arbitrage synthetic v=50 inject=true seed=42  (2 ms)  hasCycle=true via benchmark Bellman-Ford verdict (V>10) cycle=[32, 39, 48, 32]
+PASS  arbitrage synthetic v=50 inject=true seed=7  (1 ms)  hasCycle=true via benchmark Bellman-Ford verdict (V>10) cycle=[0, 30, 28, 0]
+PASS  arbitrage synthetic v=50 inject=false seed=42  (1 ms)  hasCycle=false via benchmark Bellman-Ford verdict (V>10)
+PASS  arbitrage synthetic v=50 inject=false seed=7  (1 ms)  hasCycle=false via benchmark Bellman-Ford verdict (V>10)
+== parity: ticker directory (trie) vs linear-scan oracle, TickerBench.verify ==
+PASS  ticker exact n=300000 seed=42  (137 ms)  checksum=0x6abd41c49b164a6 registry=132
+PASS  ticker exact n=300000 seed=7  (121 ms)  checksum=0x3a3f4be1f1406a13 registry=132
+PASS  ticker prefix n=300000 seed=42  (351 ms)  checksum=0x12d276fbe26e1156 registry=132
+PASS  ticker prefix n=300000 seed=7  (277 ms)  checksum=0x862d0b1d9601c2b9 registry=132
+== parity: logbook codec (Huffman) round trip, CompressionBench.verify, plus byte-identical encoding ==
+PASS  huffman trade-log batches seed=42  (630 ms)  3 batches, 5505087 bytes, encoding byte-identical to the benchmark
+PASS  huffman trade-log batches seed=7  (428 ms)  3 batches, 5505067 bytes, encoding byte-identical to the benchmark
+PASS  huffman edge inputs (empty, 1 byte, one symbol, all 256, random, skewed)  (18 ms)  6 inputs round-trip and encode byte-identically
+PASS  queue misuse is rejected (double append, unlink at the wrong level)  (1 ms)
+PASS  cache: a null load is returned but not cached; capacity < 1 rejected  (1 ms)
+PASS  huffman: truncated streams are rejected, not decoded as padding (B2)  (22 ms)  7 truncation points rejected
+PASS  huffman: 20000 corrupted streams only ever fail with IllegalArgumentException  (176 ms)  19680 rejected, the rest decoded (corruption inside the body can still decode to other valid symbols)
+RESULT: 207 passed, 0 failed

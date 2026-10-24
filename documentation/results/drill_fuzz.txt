@@ -1,0 +1,14 @@
+fuzz seed 1: 7415 requests in 11.1 s (8 threads), slowest 191 ms (POST malformed body)
+  status codes: {200: 2923, 201: 91, 204: 12, 400: 2456, 403: 28, 404: 1620, 405: 57, 409: 12, 413: 210, 'raw': 6}
+  race: 200 resting orders, 93 successful cancels, 0 orders cancelled twice
+  balance bounds: 3 over-bound accounts refused (400); 6 accounts at 10^15 traded 600 orders
+  cash: start 55002000000 + created 6000041215567255 = 6000096217567255, end 6000096217567255
+PASS  no 500
+PASS  no hang
+PASS  never dead
+PASS  alive at the end
+PASS  cash conserved
+PASS  no double cancel
+PASS  account bounds enforced
+PASS  the server process is still running
+      server log: 0 lines with Exception/SEVERE

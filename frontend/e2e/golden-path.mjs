@@ -217,7 +217,7 @@ async function main() {
   await page.waitForSelector('.cycle-legs', { timeout: 10000 });
   await page.waitForTimeout(2600);
   const cycle = squash(await page.locator('.cycle-box').innerText());
-  step('injected loophole glows: legs, multiplier and profit', cycle.includes('USD → EUR → GBP → USD') && cycle.includes('+0.3997%') && (await page.locator('.cycle-leg').count()) === 3, cycle);
+  step('injected loophole glows: legs, multiplier and profit', cycle.includes('USD → SGD → HKD → USD') && cycle.includes('+0.4000%') && (await page.locator('.cycle-leg').count()) === 3, cycle);
   step('the badge shows REPLAY, never LIVE', (await page.textContent('.badge')).includes('REPLAY'));
   step('a FOUND alert is listed', (await page.locator('.alerts').innerText()).includes('FOUND'));
   await shot('05-arbitrage-found');

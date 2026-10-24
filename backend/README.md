@@ -7,7 +7,7 @@ the Huffman Logbook and the HTTP/SSE gateway all live in `src/ads/`.
 ```sh
 backend/build.sh                 # compile into backend/out/classes
 backend/test.sh                  # the whole backend suite (parity gates, engine, API, drills' unit tests)
-backend/test.sh --scan-timing    # ... then the scanner's per-scan time at V = 12 and 20
+backend/test.sh --scan-timing    # ... then the scanner's per-scan time at V = 7, 12 and 20
 backend/run.sh serve --seed-demo-accounts      # the API on http://127.0.0.1:8080
 backend/scripts/smoke.sh         # every endpoint once, curl only
 ```

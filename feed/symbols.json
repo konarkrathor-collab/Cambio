@@ -67,5 +67,5 @@
     "CAD/INR",
     "CHF/INR"
   ],
-  "note": "Pairs in notStreamedDirectly are derived through USD by the Java backend."
+  "note": "Pairs in notStreamedDirectly have no OANDA quote, and when none of their USD legs is streamed either (the INR pairs) the backend cannot derive them from live ticks; they come only from the Frankfurter fallback (doc 06 section 4)."
 }
