@@ -2,6 +2,7 @@ import { useStore } from '../app/runtime.js';
 import { SCREENS, href, useScreen } from './route.js';
 import { splitBalance, usePracticeAccount } from './practice.js';
 import MarketsScreen from './MarketsScreen.jsx';
+import TradeScreen from './TradeScreen.jsx';
 
 function Mark() {
   return (
@@ -37,7 +38,7 @@ function ComingNext({ title }) {
 
 const VIEWS = {
   markets: MarketsScreen,
-  trade: () => <ComingNext title="Trade" />,
+  trade: TradeScreen,
   portfolio: () => <ComingNext title="Portfolio" />,
   opportunities: () => <ComingNext title="Opportunities" />,
 };
@@ -65,7 +66,7 @@ export default function ConsumerApp() {
       </header>
       {down ? <p className="notice" role="status">Can’t reach Cambio right now. Trying again…</p> : null}
       {paused ? <p className="notice" role="status">Prices paused. The market may be closed.</p> : null}
-      <main className="page" id="main"><View /></main>
+      <main className={screen === 'trade' ? 'page page-wide' : 'page'} id="main"><View /></main>
       <footer className="footer">Practice account. Simulated money. Nothing here is financial advice.</footer>
     </div>
   );
