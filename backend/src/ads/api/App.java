@@ -80,6 +80,8 @@ public final class App {
     public Path dataDir = Paths.get("data");
     public boolean seedDemoAccounts;
     public double minProfitPercent = ArbitrageScanner.DEFAULT_MIN_PROFIT_PERCENT;
+    /** The built dashboard to serve on non-/api paths (serve --static-dir), or null. */
+    public Path staticDir;
     /** How often the Vault and the counters are written while running. */
     public long flushIntervalMs = VAULT_FLUSH_MS;
     /** How often a non-empty Logbook buffer is written as a segment (Stage 6, drill 1). */
@@ -135,6 +137,7 @@ public final class App {
     market = new MarketService(new ArbitrageScanner(directory, config.minProfitPercent), thread,
         System::currentTimeMillis, hub);
     server = new ApiServer(new InetSocketAddress(config.host, config.port));
+    if (config.staticDir != null) server.serveStatic(config.staticDir);
     Simulator simulator = new Simulator(config.minProfitPercent);
     simulations = new SimulationRunner(
         config.simulationTask != null ? config.simulationTask : simulator::run);

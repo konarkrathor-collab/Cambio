@@ -185,6 +185,7 @@ public final class ApiServer {
   private final HttpServer server;
   private final ExecutorService httpThreads;
   private final List<Route> routes = new ArrayList<>();
+  private volatile StaticFiles staticFiles;
 
   public ApiServer(InetSocketAddress address) throws IOException {
     this.server = HttpServer.create(address, 64);
@@ -210,6 +211,14 @@ public final class ApiServer {
     return this;
   }
 
+  /**
+   * Serves {@code dir} (the built dashboard) for every path outside {@code /api}; see
+   * {@link StaticFiles}. Fails if the directory has no index.html.
+   */
+  public void serveStatic(java.nio.file.Path dir) throws IOException {
+    staticFiles = new StaticFiles(dir);
+  }
+
   public void start() {
     server.start();
   }
@@ -224,6 +233,11 @@ public final class ApiServer {
   }
 
   private void dispatch(HttpExchange ex) {
+    StaticFiles files = staticFiles;
+    if (files != null && !StaticFiles.isApiPath(ex.getRequestURI().getRawPath())) {
+      files.serve(ex); // the dashboard; /api/... never reaches it
+      return;
+    }
     String origin = ex.getRequestHeaders().getFirst("Origin");
     boolean allowedOrigin = origin != null && ALLOWED_ORIGINS.contains(origin);
     if (allowedOrigin) {

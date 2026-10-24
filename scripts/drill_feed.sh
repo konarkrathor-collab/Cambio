@@ -76,7 +76,15 @@ while :; do
   [ "$t" -ge 45000 ] && break
   sleep 0.25
 done
-echo "      (the last tick reached the backend at $last_tick; live quotes are valid for 30 s, contract 3.7)"
+# time the clearing by the server's own clock (the scan's scannedAt), not by when this
+# loop noticed it: the polling adds up to ~0.4 s of its own
+if [ -n "$t_clear" ]; then
+  scanned_at="$(curl -s "$BASE/api/arbitrage/scan" | sed -n 's/.*"scannedAt":"\([^"]*\)".*/\1/p')"
+  t_clear="$(python3 -c 'import sys, datetime as d; f = lambda s: d.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp() * 1000; print(int(f(sys.argv[1]) - int(sys.argv[2])))' "$scanned_at" "$t_kill")"
+  since_tick="$(python3 -c 'import sys, datetime as d; f = lambda s: d.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp(); print("%.3f" % (f(sys.argv[1]) - f(sys.argv[2])))' "$scanned_at" "$last_tick")"
+  echo "      the clearing scan ran at $scanned_at: $(awk -v t="$t_clear" 'BEGIN { printf "%.3f", t / 1000 }') s after the kill, $since_tick s after the last tick's timestamp"
+fi
+echo "      (the last tick was stamped $last_tick; live quotes are valid for 30 s, contract 3.7)"
 verdict "status disconnected within 30 s of the kill ($(awk -v t="${t_disc:-99999}" 'BEGIN { printf "%.2f", t / 1000 }') s)" \
   "$([ -n "$t_disc" ] && [ "$t_disc" -le 30000 ] && echo yes || echo no)"
 verdict "scan cleared within 30 s of the kill ($(awk -v t="${t_clear:-99999}" 'BEGIN { printf "%.2f", t / 1000 }') s)" \

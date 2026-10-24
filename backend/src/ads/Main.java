@@ -36,7 +36,7 @@ import java.util.concurrent.CountDownLatch;
  *                                (default data/logbook)
  *   run.sh structures            Stage 0 smoke run of the six structures
  *   run.sh serve [--host H] [--port N] [--data-dir DIR] [--seed-demo-accounts]
- *                [--min-profit PERCENT] [--port-file FILE]
+ *                [--min-profit PERCENT] [--port-file FILE] [--static-dir DIR]
  *                                the API gateway (default 127.0.0.1:8080, data in data/;
  *                                documentation/09_api_contract.md); the threshold also
  *                                reads MIN_PROFIT_PERCENT; --port 0 picks a free port and
@@ -83,7 +83,7 @@ public final class Main {
   private static void usage() {
     System.err.println("usage: run.sh demo [--all-trades] | accounts [FILE] | archive [DIR] [--records]"
         + " | structures | serve [--host H] [--port N] [--data-dir DIR] [--seed-demo-accounts]"
-        + " [--min-profit PERCENT] [--port-file FILE]"
+        + " [--min-profit PERCENT] [--port-file FILE] [--static-dir DIR]"
         + " | threshold-study [FILE]");
     System.exit(2);
   }
@@ -108,6 +108,8 @@ public final class Main {
         portFile = Paths.get(args[++i]);
       } else if (a.equals("--seed-demo-accounts")) {
         config.seedDemoAccounts = true;
+      } else if (a.equals("--static-dir") && hasValue) {
+        config.staticDir = Paths.get(args[++i]);
       } else {
         usage();
       }
@@ -117,7 +119,8 @@ public final class Main {
       Files.writeString(portFile, app.port() + "\n");
     }
     System.out.println("listening on http://" + config.host + ":" + app.port() + "  (data "
-        + config.dataDir + ", min profit " + config.minProfitPercent + "%)");
+        + config.dataDir + ", min profit " + config.minProfitPercent + "%"
+        + (config.staticDir == null ? "" : ", dashboard from " + config.staticDir) + ")");
     CountDownLatch stopped = new CountDownLatch(1);
     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
       app.stop();

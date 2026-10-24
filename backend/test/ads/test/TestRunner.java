@@ -84,6 +84,7 @@ public final class TestRunner {
     ApiTests.run(r);
     GatewayTests.run(r);
     SimTests.run(r);
+    StaticTests.run(r);
     System.out.println();
     System.out.println("RESULT: " + r.passed + " passed, " + r.failed + " failed");
     if (r.failed > 0) {

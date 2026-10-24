@@ -1,4 +1,12 @@
-# Stage 6 integration checks and failure drills
+# Gates, integration checks and failure drills
+
+**`verify-all.sh`** runs every gate below in sequence (backend, feed and frontend suites,
+smoke, replay gate, e2e, logbook, flood, the kill -9, feed and SSE drills, a short fuzz, and
+`check_links.py`). It prints PASS or FAIL with timings and a final table, and exits non-zero
+if anything failed. `--quick` skips the three slow timing drills. A full run takes about
+10 minutes. The soak (`soak.sh`, 11 minutes) is not part of it. **`check_links.py`**
+checks every relative link and `#anchor` in every Markdown file. To start the whole system
+for a demo, use `../start-all.sh` (see the root README).
 
 Every script starts its own fresh backend on an ephemeral port with a temporary data
 directory, then cleans up. They use curl, POSIX shell, awk and Python 3's standard library,
