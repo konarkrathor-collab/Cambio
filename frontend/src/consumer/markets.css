@@ -30,16 +30,17 @@
 .mrow-name { display: flex; flex-direction: column; min-width: 0; }
 .mrow-pair { font-size: var(--fs-lead); line-height: 1.2; }
 .mrow-sub { color: var(--ink-2); font-size: var(--fs-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.price { text-align: right; font-size: var(--fs-lead); font-weight: 600; color: var(--ink); padding: 2px 8px; border-radius: 8px; background: transparent; transition: background 700ms ease-out; }
-/* a moving price gets a brief neutral highlight; gain and loss colours belong to the change badge only */
-.price-up, .price-down { background: var(--canvas); transition: none; }
+.price { text-align: right; font-size: var(--fs-lead); font-weight: 600; color: var(--ink); }
+/* a moving price dips and returns, with no colour and no box, so a feed of ticks stays calm */
+.price-up, .price-down { animation: price-dip 450ms ease-out; }
+@keyframes price-dip { from { opacity: 0.3; } to { opacity: 1; } }
 
 .chips { position: relative; width: 72px; height: 40px; display: block; }
 .chip {
   position: absolute; top: 0; width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center; font-weight: 600; font-size: var(--fs-small); border: 2px solid var(--white);
 }
-.chip-back { left: 28px; background: var(--canvas); color: var(--ink-2); }
+.chip-back { left: 28px; padding-left: 12px; font-size: 13px; background: var(--canvas); color: var(--ink-2); }
 .chip-front { left: 0; background: var(--ink); color: var(--white); z-index: 1; }
 
 .spark path { stroke: var(--ink-3); }

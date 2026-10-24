@@ -10,8 +10,8 @@ const H = 260;
 const PAD = { l: 8, r: 64, t: 32, b: 28 };
 
 function PriceLine({ points, width, tickSize }) {
-  if (!points || points.length < 2) {
-    return <p className="chart-empty">The line draws as prices move. It starts when you open Cambio.</p>;
+  if (!points || points.length < 5) {
+    return <p className="chart-empty">The line draws as prices move. It needs a few price changes after you open Cambio.</p>;
   }
   const lo = Math.min(...points);
   const hi = Math.max(...points);
@@ -20,7 +20,8 @@ function PriceLine({ points, width, tickSize }) {
   const y = scaleLinear().domain([lo - pad, hi + pad]).range([H - PAD.b, PAD.t]);
   const d = line().x((_, i) => x(i)).y((p) => y(p))(points);
   const last = points[points.length - 1];
-  const ticks = [hi, (hi + lo) / 2, lo];
+  // three gridlines, but never two with the same label
+  const ticks = [hi, (hi + lo) / 2, lo].filter((t, i, all) => all.findIndex((u) => formatPrice(u, tickSize) === formatPrice(t, tickSize)) === i);
   return (
     <svg width={width} height={H} role="img" aria-label={`Price line, ${formatPrice(lo, tickSize)} to ${formatPrice(hi, tickSize)}`}>
       {ticks.map((t) => (

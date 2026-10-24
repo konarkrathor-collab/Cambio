@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useStore } from '../app/runtime.js';
 import { SCREENS, href, useScreen } from './route.js';
 import { splitBalance, usePracticeAccount } from './practice.js';
@@ -42,8 +43,17 @@ export default function ConsumerApp() {
     return s.health.up !== false && st && st.lastTickAt == null && Object.keys(s.rates).length === 0;
   });
   const View = VIEWS[screen];
+  useEffect(() => {
+    document.title = `${SCREENS.find((s) => s.id === screen)?.label ?? 'Markets'} · Cambio`;
+  }, [screen]);
+  // a skip link that does not touch the hash, because the hash is the router
+  const skip = (e) => {
+    e.preventDefault();
+    document.getElementById('main')?.focus();
+  };
   return (
     <div className="app">
+      <a className="skip" href="#main" onClick={skip}>Skip to content</a>
       <header className="topbar">
         <a className="brand display" href={href('markets')} aria-label="Cambio, home"><Mark /><span>Cambio</span></a>
         <nav className="nav" aria-label="Main">
@@ -57,7 +67,7 @@ export default function ConsumerApp() {
       </header>
       {down ? <p className="notice" role="status">Can’t reach Cambio right now. Trying again…</p> : null}
       {paused ? <p className="notice" role="status">Prices paused. The market may be closed.</p> : null}
-      <main className={screen === 'trade' ? 'page page-wide' : 'page'} id="main"><View /></main>
+      <main className={screen === 'trade' ? 'page page-wide' : 'page'} id="main" tabIndex={-1}><View /></main>
       <footer className="footer">Practice account. Simulated money. Nothing here is financial advice.</footer>
     </div>
   );

@@ -26,7 +26,7 @@ function Price({ value, tickSize }) {
     if (value === prev.current) return undefined;
     setFlash(value > prev.current ? 'up' : 'down');
     prev.current = value;
-    const t = setTimeout(() => setFlash(''), 700);
+    const t = setTimeout(() => setFlash(''), 450);
     return () => clearTimeout(t);
   }, [value]);
   return <span className={`price num ${flash ? `price-${flash}` : ''}`}>{formatPrice(value, tickSize)}</span>;

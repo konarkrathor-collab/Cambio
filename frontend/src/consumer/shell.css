@@ -52,3 +52,7 @@
 .change span[aria-hidden] { font-size: 10px; }
 
 @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.skip { position: absolute; left: var(--s-3); top: -64px; z-index: 20; background: var(--ink); color: var(--white); padding: var(--s-2) var(--s-3); border-radius: var(--r-pill); font-weight: 600; text-decoration: none; }
+.skip:focus-visible { top: var(--s-2); }
+.page:focus { outline: none; }

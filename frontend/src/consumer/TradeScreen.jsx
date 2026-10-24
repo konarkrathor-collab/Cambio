@@ -28,6 +28,7 @@ export default function TradeScreen() {
 
   return (
     <div className="screen trade">
+      <h1 className="visually-hidden">Trade {pair}</h1>
       <header className="card trade-head">
         <div className="trade-pick">
           <CurrencyChips base={base} quote={quote} />

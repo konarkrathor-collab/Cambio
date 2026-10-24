@@ -67,6 +67,7 @@ export default function PortfolioScreen() {
   const limit = account ? account.marginLimit / UNITS_PER_BALANCE : null;
   return (
     <div className="screen portfolio">
+      <h1 className="visually-hidden">Portfolio</h1>
       <section className="card pf-head" aria-label="Practice balance">
         <div>
           <p className="caption">Practice balance</p>
