@@ -47,7 +47,7 @@ const page = await browser.newPage({ viewport: { width: W, height: H } });
 const lines = [];
 page.on('console', (m) => lines.push(`${m.type()}: ${m.text()}`));
 page.on('pageerror', (e) => lines.push(`pageerror: ${e}`));
-await page.goto(BASE);
+await page.goto(`${BASE}/#/demo`);
 await page.getByRole('tab', { name: 'Market' }).waitFor();
 await sleep(2500); // any intro finishes and the first snapshots arrive
 

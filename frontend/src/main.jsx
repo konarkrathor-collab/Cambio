@@ -1,12 +1,15 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App.jsx';
 import { start } from './app/runtime.js';
-import './styles.css';
+
+// Two front ends share one runtime (store, API client, event stream). The consumer app is the
+// default; #/demo is the terminal-style dashboard. Their stylesheets are global, so switching
+// between them reloads the page rather than mixing the two.
+const isDemo = () => window.location.hash.startsWith('#/demo');
+const wantsDemo = isDemo();
 
 start();
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+if (wantsDemo) import('./demo-entry.jsx').then((m) => m.default());
+else import('./consumer/entry.jsx').then((m) => m.default());
+
+window.addEventListener('hashchange', () => {
+  if (isDemo() !== wantsDemo) window.location.reload();
+});

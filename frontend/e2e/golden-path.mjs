@@ -103,7 +103,7 @@ async function main() {
   page.on('pageerror', (e) => consoleLines.push({ phase, type: 'pageerror', text: String(e) }));
   const shot = async (name) => SHOTS && page.screenshot({ path: join(SHOTS, `${name}.png`) });
 
-  await page.goto(BASE);
+  await page.goto(`${BASE}/#/demo`);
   await page.waitForSelector('.book-table');
   await page.waitForFunction(() => document.querySelector('.topbar-items').innerText.includes('open'));
   step('page loads; stream open; backend ok', (await page.textContent('.topbar-items')).includes('ok'));
@@ -317,7 +317,7 @@ async function main() {
 
   // ---------------------------------------------------------------- reduced motion
   const rm = await browser.newPage({ viewport: { width: 1280, height: 720 }, reducedMotion: 'reduce' });
-  await rm.goto(BASE);
+  await rm.goto(`${BASE}/#/demo`);
   await rm.waitForSelector('.book-table');
   const anim = await rm.evaluate(() => {
     const el = document.createElement('div');

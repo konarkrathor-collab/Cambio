@@ -81,7 +81,7 @@ async function main() {
     const shot = async (name) => SHOTS && page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
 
     // ---- 1. the honesty badge
-    await page.goto(BASE);
+    await page.goto(`${BASE}/#/demo`);
     await page.waitForSelector('.book-table');
     await waitFor(async () => (await page.textContent('.topbar-items')).includes('open') && (await page.textContent('.badge')).includes('REPLAY'), 15000);
     const bar = squash(await page.textContent('.topbar-items'));
