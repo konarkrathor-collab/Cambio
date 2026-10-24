@@ -1,11 +1,12 @@
 // A titled panel with the four states every panel needs: loading, error, empty, content.
 
-export default function Panel({ title, actions, className = '', children, id }) {
+export default function Panel({ title, meta, actions, className = '', children, id }) {
   const headingId = id ? `${id}-title` : undefined;
   return (
     <section className={`panel ${className}`} aria-labelledby={headingId}>
       <header className="panel-head">
         <h2 id={headingId}>{title}</h2>
+        {meta ? <span className="panel-meta">{meta}</span> : null}
         {actions ? <div className="panel-actions">{actions}</div> : null}
       </header>
       <div className="panel-body">{children}</div>

@@ -46,7 +46,8 @@ npm run preview     # serve the production build on 127.0.0.1:4173, with the sam
 | Tab | What it shows |
 | :--- | :--- |
 | Top bar | Data-source badge: LIVE (green), or amber for FALLBACK, REPLAY or stale live data. WAITING and DISCONNECTED. Also backend health, retried with back-off; the event stream's state; and the engine's `seq`. |
-| Market | Pair picker (Trie search, 150 ms debounce, arrow keys and Enter); the order book ladder with depth bars and the spread; the depth chart; the order ticket; this session's resting orders with cancel; the trades feed (history plus live, newest first, 100 rows); accounts in simulation units. |
+| Top bar | Brand, the four tabs, the pair picker (Trie search, 150 ms debounce, arrow keys and Enter; the pair applies to Market and Inspector), the data-source badge, backend and stream state, the engine's seq, and a UTC clock. |
+| Market | The order book ladder with depth bars and the spread; the depth chart; the order ticket; this session's resting orders with cancel; the trades feed (history plus live, newest first, 100 rows); accounts in simulation units. |
 | Arbitrage | The 12-currency graph: the layout is settled once, so it never jumps. Dimmed nodes have no rate; faint dashed edges are stale; the cycle glows and pulses. Also the cycle's legs, multiplier and profit; the scanner's threshold, counts and source; and the last 20 loophole alerts. |
 | Simulator | The `POST /api/simulate` form (presets, seed, baseline, profile, scan interval, volatility), checked against the contract's ranges, including the 200,000-order cap for deep runs with the baseline. Engine versus baseline table and bars, with `checksumMatch`. The doc 04 targets marked MET or MISSED; a miss is never hidden. The last result loads on mount. |
 | Inspector | Per side: levels with order counts and the FIFO queue head, and the ladder's B+ tree shape. Refreshed on every book update for the pair and every 2 s. |

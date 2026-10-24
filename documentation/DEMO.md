@@ -103,7 +103,7 @@ If something goes wrong mid-demo, `Ctrl-C` in the terminal and `./start-all.sh` 
 
 ## 4. The trie: pair lookup (0.5 min)
 
-**Click:** back to **Market**. In the search box at the top right of the order book, type `usd/j`. Choose **USD/JPY** with the arrow keys and Enter. Then type `eur/usd` and press Enter to go back.
+**Click:** back to **Market**. In the **PAIR** box in the top bar, type `usd/j`. Choose **USD/JPY** with the arrow keys and Enter. Then type `eur/usd` and press Enter to go back.
 
 **Audience sees:** suggestions appear as you type, each with its tick size (**USD/JPY tick 0.001**). The book switches to USD/JPY, which is empty because it is a separate book, then back.
 

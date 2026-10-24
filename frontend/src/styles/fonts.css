@@ -1,0 +1,32 @@
+/* Self-hosted fonts (SIL Open Font License, texts in src/assets/fonts/). Bundled by Vite:
+   nothing is fetched from the network at runtime. Latin subset only; other glyphs (arrows,
+   check marks) fall back to the next family in the stack. */
+@font-face {
+  font-family: 'Archivo';
+  src: url('../assets/fonts/archivo-latin-wdth-wght.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../assets/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../assets/fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../assets/fonts/ibm-plex-mono-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}

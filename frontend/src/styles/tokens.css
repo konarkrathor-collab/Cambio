@@ -1,0 +1,92 @@
+/* The ONLY source of colour, type, space, radius, elevation and motion values (DESIGN.md).
+   Components use these names; a literal value outside this file is a bug.
+   Contrast on --surface-panel: text 16.8:1, text-2 12.3:1, muted 7.5:1, faint 5.7:1
+   (5.0:1 on --surface-input), accent 10.2:1, bid 10.2:1, ask 6.9:1; accent-ink on accent 10.2:1. */
+:root {
+  color-scheme: dark;
+
+  /* neutral ramp: cool graphite */
+  --surface-base: #08090b;
+  --surface-panel: #0e1013;
+  --surface-raised: #14171b;
+  --surface-input: #1a1e23;
+  --surface-hover: #20252b;
+  --line: #262b32;
+  --line-strong: #353c46;
+  --line-input: #5b6370;
+  --text: #eef1f4;
+  --text-2: #c9d0d8;
+  --text-muted: #9aa3ae;
+  --text-faint: #848d99;
+
+  /* the one accent: attention, selection, focus, the loophole, not-live data */
+  --accent: #ffad33;
+  --accent-ink: #141006;
+
+  /* market direction (and met/missed, faults: always with a word) */
+  --bid: #3dd68c;
+  --ask: #ff6b74;
+
+  /* tints derived from the above, for data fills and flashes only */
+  --bid-tint: color-mix(in srgb, var(--bid) 15%, transparent);
+  --ask-tint: color-mix(in srgb, var(--ask) 15%, transparent);
+  --bid-flash: color-mix(in srgb, var(--bid) 34%, transparent);
+  --ask-flash: color-mix(in srgb, var(--ask) 34%, transparent);
+  --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 55%, transparent);
+  --bid-area: color-mix(in srgb, var(--bid) 22%, transparent);
+  --ask-area: color-mix(in srgb, var(--ask) 20%, transparent);
+
+  /* type */
+  --font-display: 'Archivo', 'Arial Narrow', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --wdth-condensed: 75;
+  --wdth-normal: 100;
+  --wdth-expanded: 125;
+  --fs-micro: 10px;
+  --fs-label: 11px;
+  --fs-data: 13px;
+  --fs-ui: 14px;
+  --fs-value: 16px;
+  --fs-headline: 22px;
+  --fs-brand: 15px;
+  --lh-micro: 14px;
+  --lh-label: 16px;
+  --lh-data: 20px;
+  --lh-ui: 20px;
+  --lh-value: 24px;
+  --lh-headline: 28px;
+  --track-label: 0.1em;
+
+  /* space: 4 px base, layout gaps in 8s */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 28px;
+  --sp-8: 32px;
+  --row-h: 20px;
+  --head-h: 32px;
+  --bar-h: 48px;
+
+  /* radius by role */
+  --r-xs: 2px;
+  --r-sm: 4px;
+  --r-md: 8px;
+
+  /* elevation: only floating things have shadows */
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line-strong);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--ask);
+
+  /* motion */
+  --dur-instant: 80ms;
+  --dur-quick: 160ms;
+  --dur-base: 240ms;
+  --dur-slow: 420ms;
+  --dur-flash: 700ms;
+  --dur-pulse: 1600ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}

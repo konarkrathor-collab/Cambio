@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { selectPair, useStore } from '../app/runtime.js';
+import { useStore } from '../app/runtime.js';
 import Panel from './Panel.jsx';
-import PairPicker from './PairPicker.jsx';
 import OrderBook from './OrderBook.jsx';
 import DepthChart from './DepthChart.jsx';
 import OrderTicket from './OrderTicket.jsx';
@@ -14,7 +13,7 @@ export default function MarketView() {
   const [traderId, setTraderId] = useState('1');
   return (
     <div className="grid-market">
-      <Panel id="book" title={`Order book · ${pair}`} className="area-book" actions={<PairPicker value={pair} onSelect={selectPair} />}>
+      <Panel id="book" title={`Order book · ${pair}`} className="area-book">
         <OrderBook />
         <DepthChart />
       </Panel>
