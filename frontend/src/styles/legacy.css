@@ -6,17 +6,6 @@
   --cycle: var(--accent); --mono: var(--font-mono); --sans: var(--font-display);
   --ask-bar: var(--ask-tint); --bid-bar: var(--bid-tint);
 }
-.grid-insp { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
-.grid-insp > .note { grid-column: 1 / -1; }
-
-/* inspector */
-.tree { margin: 0 0 8px; }
-.tree-rows { display: grid; gap: 6px; margin-top: 6px; justify-items: center; }
-.tree-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: center; }
-.tree-node { border: 1px solid var(--accent); border-radius: 2px; padding: 2px 8px; font: 11px var(--mono); min-width: 22px; min-height: 18px; }
-.tree-leaf { border-color: #8b98a6; }
-.tree-note { font-size: 11px; }
-
 /* demo drawer */
 .demo { background: #1a1608; border-top: 2px solid var(--warn); }
 .demo summary { padding: 7px 14px; cursor: pointer; color: var(--warn); font-weight: 600; }

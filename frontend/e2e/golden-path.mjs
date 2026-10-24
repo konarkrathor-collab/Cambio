@@ -265,7 +265,7 @@ async function main() {
   await page.getByRole('tab', { name: 'Inspector' }).click();
   await page.waitForSelector('.tree', { timeout: 10000 });
   const insp = squash(await page.locator('.grid-insp').innerText());
-  step('inspector: levels, queue heads and the B+ tree shape', insp.includes('B+ tree · order 32') && insp.includes('Queue head'), insp.slice(0, 100));
+  step('inspector: levels, queue heads and the B+ tree shape', insp.includes('B+ tree · order 32') && insp.toUpperCase().includes('QUEUE HEAD'), insp.slice(0, 100));
   await shot('09-inspector');
   await page.getByRole('tab', { name: 'Inspector' }).focus();
   await page.keyboard.press('ArrowLeft');
